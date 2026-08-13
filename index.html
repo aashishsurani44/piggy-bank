@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#123A33">
+<title>Piggy-Bank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ======================= LOGIN VIEW ======================= -->
+<div id="loginView" class="login-screen">
+  <div class="login-card">
+    <div class="login-mark">🐷</div>
+    <h1 class="login-title">Piggy-Bank</h1>
+    <p class="login-sub">Household expense tracker</p>
+
+    <form id="loginForm">
+      <label class="field-label" for="loginUserSelect">Who's signing in?</label>
+      <select id="loginUserSelect" required>
+        <option value="" disabled selected>Select your name</option>
+      </select>
+
+      <label class="field-label" for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password">
+
+      <button type="submit" class="btn-primary btn-block" id="loginBtn">Sign in</button>
+      <p class="error-text" id="loginError"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ======================= APP SHELL ======================= -->
+<div id="appShell" class="app-shell hidden">
+
+  <header class="app-header">
+    <div class="header-text">
+      <div class="header-eyebrow" id="headerViewLabel">Dashboard</div>
+      <div class="header-name" id="headerUserName">—</div>
+    </div>
+    <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
+  </header>
+
+  <main id="mainContent" class="main-content">
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section id="view-dashboard" class="view active">
+
+      <div class="hero-banner">
+        <div class="hero-top">
+          <button type="button" id="prevMonthBtn" class="month-arrow" aria-label="Previous month">‹</button>
+          <div class="month-label" id="currentMonthLabel">—</div>
+          <button type="button" id="nextMonthBtn" class="month-arrow" aria-label="Next month">›</button>
+        </div>
+
+        <div class="hero-figure-wrap">
+          <span class="hero-label">Total available</span>
+          <span class="hero-figure" id="statTotalAvailable">₹0</span>
+        </div>
+
+        <div class="hero-grid">
+          <div class="hero-mini">
+            <span class="hero-mini-label">Spent this month</span>
+            <span class="hero-mini-value negative" id="statTotalExpense">₹0</span>
+          </div>
+          <div class="hero-mini">
+            <span class="hero-mini-label">Bank</span>
+            <span class="hero-mini-value" id="statBank">₹0</span>
+          </div>
+          <div class="hero-mini">
+            <span class="hero-mini-label">Cash</span>
+            <span class="hero-mini-value" id="statCash">₹0</span>
+          </div>
+          <div class="hero-mini">
+            <span class="hero-mini-label">My wallet</span>
+            <span class="hero-mini-value" id="statWallet">₹0</span>
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <button type="button" class="hero-pill" data-view="analysis">Analysis</button>
+          <button type="button" class="hero-pill" data-view="wallet">Wallet</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Recent expenses</span></div>
+        <div id="recentExpensesList" class="expense-list">
+          <p class="empty-hint">No expenses logged yet.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Notes for <span id="notesMonthLabel">this month</span></span></div>
+        <textarea id="monthNotesInput" class="notes-input" rows="4" placeholder="Anything worth remembering about this month's spending — a big one-off purchase, a plan for next month, etc."></textarea>
+        <button type="button" id="saveMonthNotesBtn" class="btn-secondary">Save note</button>
+      </div>
+
+    </section>
+
+    <!-- ---------- ANALYSIS ---------- -->
+    <section id="view-analysis" class="view">
+      <h1 class="view-title">Analysis</h1>
+
+      <div class="card filter-card">
+        <div class="card-header"><span>Filters</span></div>
+        <div class="filter-wrap">
+          <select id="filterYear"></select>
+          <select id="filterMonth">
+            <option value="">All months</option>
+            <option value="01">January</option>
+            <option value="02">February</option>
+            <option value="03">March</option>
+            <option value="04">April</option>
+            <option value="05">May</option>
+            <option value="06">June</option>
+            <option value="07">July</option>
+            <option value="08">August</option>
+            <option value="09">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+          <select id="filterCategory"><option value="">All categories</option></select>
+          <select id="filterPaymentMode">
+            <option value="">All modes</option>
+            <option value="Cash">Cash</option>
+            <option value="Bank">Bank</option>
+          </select>
+          <select id="filterPaidBy"><option value="">All people</option></select>
+          <button type="button" id="applyFiltersBtn" class="btn-primary">Apply</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Summary</span></div>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-value" id="analysisTotal">₹0</span>
+            <span class="summary-label">Total spent</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-value" id="analysisAvgDaily">₹0</span>
+            <span class="summary-label">Avg / active day</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-value" id="analysisCount">0</span>
+            <span class="summary-label">Transactions</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-value" id="analysisTopCategory">—</span>
+            <span class="summary-label">Top category</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Spend by category</span></div>
+        <div class="chart-wrap"><canvas id="categoryPieChart"></canvas></div>
+        <div id="categoryBreakdownList" class="breakdown-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Last 12 months</span></div>
+        <div class="chart-wrap"><canvas id="monthlyTrendChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Cash vs bank</span></div>
+        <div class="chart-wrap chart-wrap-small"><canvas id="paymentModeChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Spend by person</span></div>
+        <div class="chart-wrap chart-wrap-small"><canvas id="personChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Top 5 expenses</span></div>
+        <div id="topExpensesList" class="expense-list">
+          <p class="empty-hint">Nothing to show yet.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Filtered expenses (<span id="filteredCount">0</span>)</span></div>
+        <div id="filteredExpensesList" class="expense-list">
+          <p class="empty-hint">Nothing to show yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- WALLET ---------- -->
+    <section id="view-wallet" class="view">
+      <h1 class="view-title">My wallet</h1>
+      <p class="view-sub">Personal money you're holding — separate from the shared bank and cash funds.</p>
+
+      <div class="card">
+        <div class="card-header"><span>Your balance</span></div>
+        <div class="wallet-hero-value" id="myWalletBalance">₹0</div>
+        <div class="inline-form">
+          <input type="number" id="walletSelfAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <button type="button" id="walletSelfAdjustBtn" class="btn-secondary">Update</button>
+        </div>
+        <p class="hint-text">Enter a positive number to add money, a negative number to remove it. Only you can change your own wallet here.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Everyone's wallets</span></div>
+        <div id="allWalletsList" class="manage-list"></div>
+      </div>
+    </section>
+
+    <!-- ---------- FORECAST ---------- -->
+    <section id="view-forecast" class="view">
+      <h1 class="view-title">Forecast</h1>
+      <p class="view-sub">Estimate how a monthly budget would likely split across categories, based on past spending.</p>
+
+      <div class="card">
+        <div class="card-header"><span>Set a monthly budget</span></div>
+        <label class="field-label" for="forecastLookback">Base the pattern on</label>
+        <select id="forecastLookback">
+          <option value="3">Last 3 months</option>
+          <option value="6" selected>Last 6 months</option>
+          <option value="12">Last 12 months</option>
+          <option value="all">All time</option>
+        </select>
+        <label class="field-label" for="forecastAmount">Amount to spend this month</label>
+        <input type="number" id="forecastAmount" min="0" step="0.01" placeholder="e.g. 30000" inputmode="decimal">
+        <button type="button" id="generateForecastBtn" class="btn-primary btn-block">Generate forecast</button>
+        <p class="error-text" id="forecastError"></p>
+      </div>
+
+      <div class="card hidden" id="forecastResultCard">
+        <div class="card-header"><span>Suggested split</span></div>
+        <div class="chart-wrap"><canvas id="forecastChart"></canvas></div>
+        <div id="forecastBreakdownList" class="breakdown-list"></div>
+        <p class="hint-text">Percentages come from category spend over the selected period, applied to the amount you entered.</p>
+      </div>
+    </section>
+
+    <!-- ---------- ADMIN ---------- -->
+    <section id="view-admin" class="view">
+      <h1 class="view-title">Admin</h1>
+
+      <div class="card">
+        <div class="card-header"><span>Categories</span></div>
+        <div class="inline-form">
+          <input type="text" id="newCategoryInput" placeholder="New category name">
+          <button type="button" id="addCategoryBtn" class="btn-secondary">Add</button>
+        </div>
+        <div id="categoryManageList" class="manage-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Bank &amp; cash funds</span></div>
+        <p class="hint-text">Enter a positive number to top up, negative to correct down. Balances are allowed to go negative.</p>
+
+        <div class="fund-row">
+          <span class="fund-name">Bank balance</span>
+          <span class="fund-value" id="adminBankBalance">₹0</span>
+        </div>
+        <div class="inline-form">
+          <input type="number" id="bankAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <button type="button" id="updateBankBtn" class="btn-secondary">Update</button>
+        </div>
+
+        <div class="fund-row fund-row-spaced">
+          <span class="fund-name">Cash balance</span>
+          <span class="fund-value" id="adminCashBalance">₹0</span>
+        </div>
+        <div class="inline-form">
+          <input type="number" id="cashAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <button type="button" id="updateCashBtn" class="btn-secondary">Update</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Personal wallets</span></div>
+        <p class="hint-text">Everyone can top up their own wallet from the Wallet tab. You can adjust anyone's here too.</p>
+        <div id="walletManageList"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ---------- EXPENSE FORM OVERLAY ---------- -->
+  <div id="expenseOverlay" class="overlay hidden">
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <button type="button" id="closeExpenseFormBtn" class="icon-btn" aria-label="Close">✕</button>
+        <h2 id="expenseFormTitle">Add expense</h2>
+        <button type="submit" form="expenseForm" id="saveExpenseBtn" class="save-link-btn">Save</button>
+      </div>
+      <form id="expenseForm" class="overlay-body">
+        <input type="hidden" id="expenseId">
+
+        <label class="field-label" for="expenseAmount">Amount</label>
+        <input type="number" id="expenseAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required>
+
+        <label class="field-label" for="expenseDescription">Description</label>
+        <input type="text" id="expenseDescription" placeholder="e.g. Groceries" required>
+
+        <label class="field-label" for="expenseDate">Date</label>
+        <input type="date" id="expenseDate" required>
+
+        <label class="field-label" for="expensePaidBy">Paid by</label>
+        <select id="expensePaidBy" required></select>
+
+        <label class="field-label" for="expenseCategory">Category</label>
+        <select id="expenseCategory" required></select>
+
+        <label class="field-label" for="expensePaymentMode">Payment mode</label>
+        <select id="expensePaymentMode" required>
+          <option value="Cash">Cash</option>
+          <option value="Bank">Bank</option>
+        </select>
+
+        <label class="check-row" for="expenseFromWallet">
+          <input type="checkbox" id="expenseFromWallet">
+          <span>Deduct this from their personal wallet instead of the shared fund</span>
+        </label>
+
+        <label class="field-label" for="expenseComments">Comments</label>
+        <textarea id="expenseComments" rows="3" placeholder="Optional"></textarea>
+
+        <p class="error-text" id="expenseFormError"></p>
+
+        <div class="overlay-actions">
+          <button type="button" class="link-danger hidden" id="deleteExpenseBtn">Delete this expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <button type="button" id="fabAddExpense" class="fab" aria-label="Add expense">
+    <span class="fab-icon">+</span><span class="fab-label">Add expense</span>
+  </button>
+
+  <nav class="bottom-nav">
+    <button type="button" class="nav-btn active" data-view="dashboard">
+      <span class="nav-icon">⌂</span><span>Home</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="analysis">
+      <span class="nav-icon">▤</span><span>Analysis</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="wallet">
+      <span class="nav-icon">◎</span><span>Wallet</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="forecast">
+      <span class="nav-icon">◈</span><span>Forecast</span>
+    </button>
+    <button type="button" class="nav-btn hidden" id="navAdminBtn" data-view="admin">
+      <span class="nav-icon">⚙</span><span>Admin</span>
+    </button>
+  </nav>
+
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- Firebase (compat SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
+<script src="app.js"></script>
+</body>
+</html>
