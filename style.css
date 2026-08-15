@@ -409,6 +409,23 @@ textarea { resize: vertical; font-family: var(--font-body); }
 }
 .hero-pill:active { background: rgba(255,255,255,0.24); }
 
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.view-all-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-body);
+}
+
 /* ---------------- cards ---------------- */
 .card {
   background: var(--surface);
