@@ -50,7 +50,7 @@
     <!-- ---------- DASHBOARD ---------- -->
     <section id="view-dashboard" class="view active">
 
-      <div class="hero-banner">
+      <div class="hero-banner" id="heroBanner">
         <div class="hero-top">
           <button type="button" id="prevMonthBtn" class="month-arrow" aria-label="Previous month">‹</button>
           <div class="month-label" id="currentMonthLabel">—</div>
@@ -58,7 +58,7 @@
         </div>
 
         <div class="hero-figure-wrap">
-          <span class="hero-label">Total available</span>
+          <span class="hero-label" id="heroFigureLabel">Total available</span>
           <span class="hero-figure" id="statTotalAvailable">₹0</span>
         </div>
 
@@ -68,11 +68,15 @@
             <span class="hero-mini-value negative" id="statTotalExpense">₹0</span>
           </div>
           <div class="hero-mini">
-            <span class="hero-mini-label">Bank</span>
+            <span class="hero-mini-label">Net this month</span>
+            <span class="hero-mini-value" id="statNet">₹0</span>
+          </div>
+          <div class="hero-mini">
+            <span class="hero-mini-label">Bank added</span>
             <span class="hero-mini-value" id="statBank">₹0</span>
           </div>
           <div class="hero-mini">
-            <span class="hero-mini-label">Cash</span>
+            <span class="hero-mini-label">Cash added</span>
             <span class="hero-mini-value" id="statCash">₹0</span>
           </div>
           <div class="hero-mini">
@@ -102,7 +106,7 @@
 
     </section>
 
-    <!-- ---------- ANALYSIS ---------- -->
+    <!-- ---------- ANALYSIS (filters + category spend only) ---------- -->
     <section id="view-analysis" class="view">
       <h1 class="view-title">Analysis</h1>
 
@@ -137,67 +141,16 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><span>Summary</span></div>
-        <div class="summary-grid">
-          <div class="summary-item">
-            <span class="summary-value" id="analysisTotal">₹0</span>
-            <span class="summary-label">Total spent</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-value" id="analysisAvgDaily">₹0</span>
-            <span class="summary-label">Avg / active day</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-value" id="analysisCount">0</span>
-            <span class="summary-label">Transactions</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-value" id="analysisTopCategory">—</span>
-            <span class="summary-label">Top category</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
         <div class="card-header"><span>Spend by category</span></div>
         <div class="chart-wrap"><canvas id="categoryPieChart"></canvas></div>
         <div id="categoryBreakdownList" class="breakdown-list"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span>Last 12 months</span></div>
-        <div class="chart-wrap"><canvas id="monthlyTrendChart"></canvas></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span>Cash vs bank</span></div>
-        <div class="chart-wrap chart-wrap-small"><canvas id="paymentModeChart"></canvas></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span>Spend by person</span></div>
-        <div class="chart-wrap chart-wrap-small"><canvas id="personChart"></canvas></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span>Top 5 expenses</span></div>
-        <div id="topExpensesList" class="expense-list">
-          <p class="empty-hint">Nothing to show yet.</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span>Filtered expenses (<span id="filteredCount">0</span>)</span></div>
-        <div id="filteredExpensesList" class="expense-list">
-          <p class="empty-hint">Nothing to show yet.</p>
-        </div>
       </div>
     </section>
 
     <!-- ---------- WALLET ---------- -->
     <section id="view-wallet" class="view">
       <h1 class="view-title">My wallet</h1>
-      <p class="view-sub">Personal money you're holding — separate from the shared bank and cash funds.</p>
+      <p class="view-sub">Personal money you're holding. Adding to it moves money out of the shared cash fund.</p>
 
       <div class="card">
         <div class="card-header"><span>Your balance</span></div>
@@ -206,7 +159,7 @@
           <input type="number" id="walletSelfAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="walletSelfAdjustBtn" class="btn-secondary">Update</button>
         </div>
-        <p class="hint-text">Enter a positive number to add money, a negative number to remove it. Only you can change your own wallet here.</p>
+        <p class="hint-text">Positive adds to your wallet and takes that much out of shared cash. Negative returns money to shared cash.</p>
       </div>
 
       <div class="card">
@@ -265,6 +218,7 @@
           <span class="fund-value" id="adminBankBalance">₹0</span>
         </div>
         <div class="inline-form">
+          <input type="date" id="bankAdjustDate">
           <input type="number" id="bankAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="updateBankBtn" class="btn-secondary">Update</button>
         </div>
@@ -274,8 +228,16 @@
           <span class="fund-value" id="adminCashBalance">₹0</span>
         </div>
         <div class="inline-form">
+          <input type="date" id="cashAdjustDate">
           <input type="number" id="cashAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="updateCashBtn" class="btn-secondary">Update</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>Fund activity</span></div>
+        <div id="fundActivityList" class="expense-list">
+          <p class="empty-hint">No fund activity yet.</p>
         </div>
       </div>
 
