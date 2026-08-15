@@ -402,23 +402,32 @@ async function checkMonthRollover() {
     });
 
     if (result.committed && previousMonth && previousMonth < nowMonth) {
-      const bank = Number(fundsCache.bank || 0);
-      const cash = Number(fundsCache.cash || 0);
       const label = monthLabel(previousMonth);
-      const updates = {};
 
-      if (bank !== 0) {
+      const bankSpentPrev = Object.values(expensesCache)
+        .filter(e => e.month === previousMonth && !e.fromWallet && e.paymentMode === "Bank")
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
+      const cashSpentPrev = Object.values(expensesCache)
+        .filter(e => e.month === previousMonth && !e.fromWallet && e.paymentMode === "Cash")
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+      // Leftover = whatever carried INTO that month + that month's own top-ups - that month's spend.
+      const bankLeftover = carryForwardForMonth(previousMonth, "bank") + fundNetForMonth("bank", previousMonth) - bankSpentPrev;
+      const cashLeftover = carryForwardForMonth(previousMonth, "cash") + fundNetForMonth("cash", previousMonth) - cashSpentPrev;
+
+      const updates = {};
+      if (bankLeftover !== 0) {
         const k = db.ref("fundLedger").push().key;
         updates["fundLedger/" + k] = {
-          type: "bank", amount: bank, date: nowMonth + "-01", month: nowMonth,
+          type: "bank", amount: bankLeftover, date: nowMonth + "-01", month: nowMonth,
           isCarryForward: true, note: "Carried forward from " + label,
           createdBy: currentUser.uid, createdAt: Date.now()
         };
       }
-      if (cash !== 0) {
+      if (cashLeftover !== 0) {
         const k = db.ref("fundLedger").push().key;
         updates["fundLedger/" + k] = {
-          type: "cash", amount: cash, date: nowMonth + "-01", month: nowMonth,
+          type: "cash", amount: cashLeftover, date: nowMonth + "-01", month: nowMonth,
           isCarryForward: true, note: "Carried forward from " + label,
           createdBy: currentUser.uid, createdAt: Date.now()
         };
@@ -514,6 +523,15 @@ function fundNetForMonth(type, yyyymm) {
   return total;
 }
 
+// Amount automatically carried in at the start of a month (from the previous month's leftover).
+// Pass a type ("bank"/"cash") to get just that fund's carry-in, or omit for the combined total.
+function carryForwardForMonth(yyyymm, type) {
+  let total = 0;
+  Object.values(fundLedgerCache).forEach(r => {
+    if (r.isCarryForward && r.month === yyyymm && (!type || r.type === type)) total += Number(r.amount);
+  });
+  return total;
+}
 
 // DELETE the monthEndDate() and fundBalanceAsOfMonthEnd() functions entirely — no longer used.
 
@@ -534,8 +552,10 @@ function renderDashboard() {
   setStatValue("statBank", bankAdded);
   setStatValue("statCash", cashAdded);
 
-  // Available for this month only: what was added this month minus what was spent this month.
-  const available = (bankAdded + cashAdded) - spentThisMonth;
+// Available for this month: whatever carried in from last month, plus this month's
+  // own added amounts, minus this month's spend.
+  const carriedIn = carryForwardForMonth(selectedMonth);
+  const available = carriedIn + bankAdded + cashAdded - spentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
@@ -990,7 +1010,6 @@ function renderCategoryManageList() {
    ========================================================= */
 function renderFundsUI() {
   document.getElementById("adminBankBalance").textContent = formatCurrency(fundsCache.bank || 0);
-  document.getElementById("adminCashBalance").textContent = formatCurrency(fundsCache.cash || 0);
 }
 
 document.getElementById("updateBankBtn").addEventListener("click", () => adjustFund("bank", "bankAdjustInput", "bankAdjustDate"));
