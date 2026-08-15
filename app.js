@@ -2,11 +2,10 @@
    PIGGY-BANK — app.js
 
    Fill in firebaseConfig below with your Firebase project's
-   web config. Everyone who uses the app (their name, email,
-   and role) lives in the Realtime Database at /users, not in
-   this file — see the comment above ROLE CHECK / near the
-   bottom of database.rules.json for the exact shape to add
-   manually in the Firebase console.
+   web config. Everyone who uses the app (name, email, role)
+   lives in the Realtime Database at /users — see the shape
+   required in database.rules.json. Add them manually in the
+   Firebase console; nothing here needs their details.
 --------------------------------------------------------- */
 const firebaseConfig = {
   apiKey: "AIzaSyCCwzgEy9nss_3LFHF20z8FzNf88RPDWLc",
@@ -18,13 +17,23 @@ const firebaseConfig = {
   appId: "1:537258140781:web:2853b6c4909357c23fcb64"
 };
 
+
 const CURRENCY = "₹";
+const DATA_RETENTION_DAYS = 366; // ~1 year; expenses & fund ledger entries older than this are pruned
 
 // Stable palette used to color categories consistently across charts & badges.
 const CHART_COLORS = [
   "#17B897", "#F2994A", "#EB5757", "#5B6EE1", "#BB6BD9",
   "#2F9E44", "#F2C94C", "#EE6C9E", "#3F7CAC", "#9B51E0",
   "#E8590C", "#0CA678"
+];
+
+// One gradient per calendar month (Jan..Dec) for the dashboard hero banner.
+const MONTH_COLORS = [
+  ["#3B2F63", "#8B5CF6"], ["#1E3A5F", "#3B82F6"], ["#0F3D3E", "#14B8A6"],
+  ["#1B4332", "#22C55E"], ["#4D5A0A", "#84CC16"], ["#5C4A0A", "#EAB308"],
+  ["#5C2E0A", "#F97316"], ["#5C1A1A", "#EF4444"], ["#5C0A3D", "#EC4899"],
+  ["#3D0A5C", "#A855F7"], ["#0A2E5C", "#0EA5E9"], ["#0F332C", "#17B897"]
 ];
 
 /* =========================================================
@@ -44,11 +53,14 @@ let categoriesCache = {};    // { id: { name, createdAt } }
 let expensesCache = {};      // { id: { amount, description, date, month, paidByUid, paidByName, categoryId, categoryName, paymentMode, fromWallet, comments, createdAt } }
 let fundsCache = { bank: 0, cash: 0 };
 let walletsCache = {};       // { uid: number }
+let fundLedgerCache = {};    // { id: { type, amount, date, month, isCarryForward, isWalletTransfer, note, createdBy, createdAt } }
 
 let selectedMonth = todayStr().slice(0, 7); // "YYYY-MM"
 let currentView = "dashboard";
 let charts = {};             // Chart.js instances keyed by canvas id
 let listenersAttached = false;
+let rolloverChecked = false;
+let pruneScheduled = false;
 
 /* =========================================================
    HELPERS
@@ -58,6 +70,8 @@ function todayStr() {
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
+
+function currentMonthStr() { return todayStr().slice(0, 7); }
 
 function formatCurrency(amount) {
   const n = Number(amount) || 0;
@@ -81,6 +95,12 @@ function shiftMonth(yyyymm, delta) {
   const [y, m] = yyyymm.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+function monthEndDate(yyyymm) {
+  const [y, m] = yyyymm.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return yyyymm + "-" + String(lastDay).padStart(2, "0");
 }
 
 function escapeHtml(str) {
@@ -124,9 +144,41 @@ function toast(message) {
 }
 
 /* =========================================================
+   LOGIN BRUTE-FORCE LOCKOUT (client-side, localStorage)
+   ========================================================= */
+const LOGIN_ATTEMPTS_KEY = "pb_login_attempts";
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function getLoginAttemptState() {
+  try {
+    return JSON.parse(localStorage.getItem(LOGIN_ATTEMPTS_KEY)) || { count: 0, lockedUntil: 0 };
+  } catch (e) { return { count: 0, lockedUntil: 0 }; }
+}
+function setLoginAttemptState(state) {
+  try { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+}
+function recordFailedLogin() {
+  const state = getLoginAttemptState();
+  state.count = (state.count || 0) + 1;
+  if (state.count >= MAX_LOGIN_ATTEMPTS) {
+    state.lockedUntil = Date.now() + LOCKOUT_MS;
+    state.count = 0;
+  }
+  setLoginAttemptState(state);
+}
+function clearLoginAttempts() { setLoginAttemptState({ count: 0, lockedUntil: 0 }); }
+function loginLockoutRemainingMs() {
+  const state = getLoginAttemptState();
+  return Math.max(0, (state.lockedUntil || 0) - Date.now());
+}
+function lockoutMessage(remainingMs) {
+  const mins = Math.max(1, Math.ceil(remainingMs / 60000));
+  return `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`;
+}
+
+/* =========================================================
    USER DIRECTORY (public, read-only from the client)
-   Loaded before login so the sign-in dropdown can show names,
-   and kept live afterward so every dropdown stays in sync.
    ========================================================= */
 db.ref("users").on("value", snap => {
   usersDirectory = snap.val() || {};
@@ -173,10 +225,14 @@ function populateUserDropdowns() {
    ========================================================= */
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const uid = document.getElementById("loginUserSelect").value;
-  const password = document.getElementById("loginPassword").value;
   const errEl = document.getElementById("loginError");
   errEl.textContent = "";
+
+  const remaining = loginLockoutRemainingMs();
+  if (remaining > 0) { errEl.textContent = lockoutMessage(remaining); return; }
+
+  const uid = document.getElementById("loginUserSelect").value;
+  const password = document.getElementById("loginPassword").value;
 
   if (!uid) { errEl.textContent = "Select who is signing in."; return; }
   const profile = usersDirectory[uid];
@@ -188,8 +244,11 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
 
   try {
     await auth.signInWithEmailAndPassword(profile.email, password);
+    clearLoginAttempts();
   } catch (err) {
-    errEl.textContent = friendlyAuthError(err);
+    recordFailedLogin();
+    const stillRemaining = loginLockoutRemainingMs();
+    errEl.textContent = stillRemaining > 0 ? lockoutMessage(stillRemaining) : friendlyAuthError(err);
   } finally {
     btn.disabled = false;
     btn.textContent = "Sign in";
@@ -247,6 +306,7 @@ function enterApp() {
   switchView("dashboard");
   attachDataListeners();
   loadMonthNotes();
+  setTimeout(pruneOldData, 2500);
 }
 
 /* =========================================================
@@ -265,7 +325,7 @@ function switchView(view) {
   if (view === "dashboard") renderDashboard();
   if (view === "analysis") { populateFilterYearOptions(); applyFilters(); }
   if (view === "wallet") renderWalletPage();
-  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderWalletUI(); }
+  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); }
 }
 
 document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -276,9 +336,7 @@ document.querySelectorAll(".hero-pill").forEach(btn => {
 });
 
 /* =========================================================
-   DATA LISTENERS (realtime — always re-render on change,
-   regardless of which tab is currently open, so balances and
-   lists never go stale while you're looking at another page)
+   DATA LISTENERS (realtime)
    ========================================================= */
 function attachDataListeners() {
   if (listenersAttached) return;
@@ -303,14 +361,23 @@ function attachDataListeners() {
     fundsCache = snap.val() || { bank: 0, cash: 0 };
     renderDashboard();
     renderFundsUI();
+    if (!rolloverChecked) {
+      rolloverChecked = true;
+      checkMonthRollover();
+    }
   });
 
   db.ref("wallets").on("value", snap => {
     walletsCache = snap.val() || {};
     renderDashboard();
-    renderFundsUI();
     renderWalletUI();
     renderWalletPage();
+  });
+
+  db.ref("fundLedger").on("value", snap => {
+    fundLedgerCache = snap.val() || {};
+    renderDashboard();
+    renderFundActivity();
   });
 }
 
@@ -320,7 +387,74 @@ function detachDataListeners() {
   db.ref("expenses").off();
   db.ref("funds").off();
   db.ref("wallets").off();
+  db.ref("fundLedger").off();
   listenersAttached = false;
+  rolloverChecked = false;
+}
+
+/* =========================================================
+   MONTH-END CARRY FORWARD (automatic, once per real month)
+   ========================================================= */
+async function checkMonthRollover() {
+  const nowMonth = currentMonthStr();
+  let previousMonth = null;
+  try {
+    const result = await db.ref("systemState/lastFundMonth").transaction(current => {
+      previousMonth = current;
+      if (current === null) return nowMonth;
+      if (current >= nowMonth) return; // already up to date — abort
+      return nowMonth;
+    });
+
+    if (result.committed && previousMonth && previousMonth < nowMonth) {
+      const bank = Number(fundsCache.bank || 0);
+      const cash = Number(fundsCache.cash || 0);
+      const label = monthLabel(previousMonth);
+      const updates = {};
+
+      if (bank !== 0) {
+        const k = db.ref("fundLedger").push().key;
+        updates["fundLedger/" + k] = {
+          type: "bank", amount: bank, date: nowMonth + "-01", month: nowMonth,
+          isCarryForward: true, note: "Carried forward from " + label,
+          createdBy: currentUser.uid, createdAt: Date.now()
+        };
+      }
+      if (cash !== 0) {
+        const k = db.ref("fundLedger").push().key;
+        updates["fundLedger/" + k] = {
+          type: "cash", amount: cash, date: nowMonth + "-01", month: nowMonth,
+          isCarryForward: true, note: "Carried forward from " + label,
+          createdBy: currentUser.uid, createdAt: Date.now()
+        };
+      }
+      if (Object.keys(updates).length) await db.ref().update(updates);
+    }
+  } catch (err) { /* non-critical background task */ }
+}
+
+/* =========================================================
+   1-YEAR DATA RETENTION (prune older records client-side)
+   ========================================================= */
+function pruneOldData() {
+  if (pruneScheduled) return;
+  pruneScheduled = true;
+
+  const cutoff = new Date(todayStr() + "T00:00:00");
+  cutoff.setDate(cutoff.getDate() - DATA_RETENTION_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const updates = {};
+  Object.entries(expensesCache).forEach(([id, e]) => {
+    if (e.date && e.date < cutoffStr) updates["expenses/" + id] = null;
+  });
+  Object.entries(fundLedgerCache).forEach(([id, r]) => {
+    if (r.date && r.date < cutoffStr) updates["fundLedger/" + id] = null;
+  });
+
+  if (Object.keys(updates).length) {
+    db.ref().update(updates).catch(() => {});
+  }
 }
 
 /* =========================================================
@@ -343,7 +477,7 @@ function populateCategoryDropdowns() {
 }
 
 /* =========================================================
-   DASHBOARD
+   DASHBOARD (month-scoped)
    ========================================================= */
 document.getElementById("prevMonthBtn").addEventListener("click", () => {
   selectedMonth = shiftMonth(selectedMonth, -1);
@@ -351,10 +485,23 @@ document.getElementById("prevMonthBtn").addEventListener("click", () => {
   loadMonthNotes();
 });
 document.getElementById("nextMonthBtn").addEventListener("click", () => {
-  selectedMonth = shiftMonth(selectedMonth, 1);
+  const candidate = shiftMonth(selectedMonth, 1);
+  if (candidate > currentMonthStr()) return; // never go into the future
+  selectedMonth = candidate;
   renderDashboard();
   loadMonthNotes();
 });
+
+function updateMonthNavButtons() {
+  document.getElementById("nextMonthBtn").disabled = selectedMonth === currentMonthStr();
+}
+
+function applyHeroColor() {
+  const idx = parseInt(selectedMonth.split("-")[1], 10) - 1;
+  const [from, to] = MONTH_COLORS[((idx % 12) + 12) % 12];
+  const el = document.getElementById("heroBanner");
+  if (el) el.style.background = `linear-gradient(155deg, ${from}, ${to})`;
+}
 
 function setStatValue(elId, value) {
   const el = document.getElementById(elId);
@@ -363,19 +510,54 @@ function setStatValue(elId, value) {
   el.classList.toggle("negative", value < 0);
 }
 
+// Net ledger activity (top-ups/corrections/wallet-transfers, excluding carry-forward markers) for one month.
+function fundNetForMonth(type, yyyymm) {
+  let total = 0;
+  Object.values(fundLedgerCache).forEach(r => {
+    if (r.type === type && !r.isCarryForward && r.month === yyyymm) total += Number(r.amount);
+  });
+  return total;
+}
+
+// Reconstructed bank/cash balance as it stood at the end of a given month.
+function fundBalanceAsOfMonthEnd(type, yyyymm) {
+  const cutoff = monthEndDate(yyyymm);
+  let total = 0;
+  Object.values(fundLedgerCache).forEach(r => {
+    if (r.type === type && !r.isCarryForward && r.date <= cutoff) total += Number(r.amount);
+  });
+  Object.values(expensesCache).forEach(e => {
+    if (!e.fromWallet && e.paymentMode && e.paymentMode.toLowerCase() === type && e.date <= cutoff) {
+      total -= Number(e.amount);
+    }
+  });
+  return total;
+}
+
 function renderDashboard() {
   if (!currentUser) return;
   document.getElementById("currentMonthLabel").textContent = monthLabel(selectedMonth);
+  updateMonthNavButtons();
+  applyHeroColor();
 
-  const monthExpenses = Object.entries(expensesCache).filter(([, e]) => e.month === selectedMonth);
-  const totalMonth = monthExpenses.reduce((sum, [, e]) => sum + Number(e.amount || 0), 0);
-  document.getElementById("statTotalExpense").textContent = formatCurrency(totalMonth);
+  const isCurrentMonth = selectedMonth === currentMonthStr();
 
-  const bank = Number(fundsCache.bank || 0);
-  const cash = Number(fundsCache.cash || 0);
-  setStatValue("statBank", bank);
-  setStatValue("statCash", cash);
-  setStatValue("statTotalAvailable", bank + cash);
+  const spentThisMonth = Object.values(expensesCache)
+    .filter(e => e.month === selectedMonth)
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  document.getElementById("statTotalExpense").textContent = formatCurrency(spentThisMonth);
+
+  const bankAdded = fundNetForMonth("bank", selectedMonth);
+  const cashAdded = fundNetForMonth("cash", selectedMonth);
+  setStatValue("statBank", bankAdded);
+  setStatValue("statCash", cashAdded);
+  setStatValue("statNet", (bankAdded + cashAdded) - spentThisMonth);
+
+  const totalAvailable = isCurrentMonth
+    ? Number(fundsCache.bank || 0) + Number(fundsCache.cash || 0)
+    : fundBalanceAsOfMonthEnd("bank", selectedMonth) + fundBalanceAsOfMonthEnd("cash", selectedMonth);
+  setStatValue("statTotalAvailable", totalAvailable);
+  document.getElementById("heroFigureLabel").textContent = isCurrentMonth ? "Total available" : "Available as of month end";
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
@@ -583,7 +765,7 @@ document.getElementById("deleteExpenseBtn").addEventListener("click", async () =
 });
 
 /* =========================================================
-   ANALYSIS
+   ANALYSIS (filters + spend-by-category only)
    ========================================================= */
 function populateFilterYearOptions() {
   const years = new Set(Object.values(expensesCache).map(e => e.date.slice(0, 4)));
@@ -617,31 +799,7 @@ function getFilteredExpenses() {
 }
 
 function applyFilters() {
-  const filtered = getFilteredExpenses();
-  renderAnalysisSummary(filtered);
-  renderCategoryBreakdown(filtered);
-  renderMonthlyTrend();
-  renderPaymentModeChart(filtered);
-  renderPersonChart(filtered);
-  renderTopExpenses(filtered);
-  renderFilteredExpenseList(filtered);
-}
-
-function renderAnalysisSummary(list) {
-  const total = list.reduce((s, [, e]) => s + Number(e.amount || 0), 0);
-  const activeDays = new Set(list.map(([, e]) => e.date)).size;
-  const avgDaily = activeDays ? total / activeDays : 0;
-
-  const catTotals = {};
-  list.forEach(([, e]) => { catTotals[e.categoryName] = (catTotals[e.categoryName] || 0) + Number(e.amount); });
-  let topCat = "—";
-  let topVal = -1;
-  Object.entries(catTotals).forEach(([name, val]) => { if (val > topVal) { topVal = val; topCat = name; } });
-
-  document.getElementById("analysisTotal").textContent = formatCurrency(total);
-  document.getElementById("analysisAvgDaily").textContent = formatCurrency(avgDaily);
-  document.getElementById("analysisCount").textContent = list.length;
-  document.getElementById("analysisTopCategory").textContent = topCat;
+  renderCategoryBreakdown(getFilteredExpenses());
 }
 
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
@@ -680,83 +838,6 @@ function renderCategoryBreakdown(list) {
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
   });
-}
-
-function renderMonthlyTrend() {
-  const months = [];
-  let cursor = todayStr().slice(0, 7);
-  for (let i = 11; i >= 0; i--) months.push(shiftMonth(cursor, -i));
-
-  const totals = months.map(m =>
-    Object.values(expensesCache).filter(e => e.month === m).reduce((s, e) => s + Number(e.amount || 0), 0));
-
-  destroyChart("monthlyTrendChart");
-  const ctx = document.getElementById("monthlyTrendChart").getContext("2d");
-  charts.monthlyTrendChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: months.map(m => monthLabel(m).split(" ")[0].slice(0, 3)),
-      datasets: [{ data: totals, backgroundColor: "#17B897", borderRadius: 6, maxBarThickness: 22 }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } }
-    }
-  });
-}
-
-function renderPaymentModeChart(list) {
-  const cash = list.filter(([, e]) => e.paymentMode === "Cash").reduce((s, [, e]) => s + Number(e.amount), 0);
-  const bank = list.filter(([, e]) => e.paymentMode === "Bank").reduce((s, [, e]) => s + Number(e.amount), 0);
-
-  destroyChart("paymentModeChart");
-  const ctx = document.getElementById("paymentModeChart").getContext("2d");
-  charts.paymentModeChart = new Chart(ctx, {
-    type: "doughnut",
-    data: { labels: ["Cash", "Bank"], datasets: [{ data: [cash, bank], backgroundColor: ["#F2994A", "#17B897"], borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }
-  });
-}
-
-function renderPersonChart(list) {
-  const totals = {};
-  Object.values(usersDirectory).forEach(u => { totals[u.name] = 0; });
-  list.forEach(([, e]) => { totals[e.paidByName] = (totals[e.paidByName] || 0) + Number(e.amount); });
-
-  destroyChart("personChart");
-  const ctx = document.getElementById("personChart").getContext("2d");
-  charts.personChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: Object.keys(totals),
-      datasets: [{ data: Object.values(totals), backgroundColor: "#EB5757", borderRadius: 6, maxBarThickness: 30 }]
-    },
-    options: {
-      indexAxis: "y", responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 11 } } } }
-    }
-  });
-}
-
-function renderTopExpenses(list) {
-  const top = [...list].sort((a, b) => Number(b[1].amount) - Number(a[1].amount)).slice(0, 5);
-  const el = document.getElementById("topExpensesList");
-  el.innerHTML = top.length
-    ? top.map(([id, e]) => expenseRowHtml(id, e)).join("")
-    : `<p class="empty-hint">No expenses match these filters.</p>`;
-  el.querySelectorAll(".expense-row").forEach(row => row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id)));
-}
-
-function renderFilteredExpenseList(list) {
-  const sorted = [...list].sort((a, b) => b[1].date.localeCompare(a[1].date));
-  document.getElementById("filteredCount").textContent = sorted.length;
-  const el = document.getElementById("filteredExpensesList");
-  el.innerHTML = sorted.length
-    ? sorted.map(([id, e]) => expenseRowHtml(id, e)).join("")
-    : `<p class="empty-hint">No expenses match these filters.</p>`;
-  el.querySelectorAll(".expense-row").forEach(row => row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id)));
 }
 
 /* =========================================================
@@ -831,14 +912,24 @@ function renderForecastResult(breakdown) {
 }
 
 /* =========================================================
-   WALLET PAGE (every signed-in user can top up their own)
+   WALLET PAGE (self top-up moves money out of shared cash)
    ========================================================= */
 document.getElementById("walletSelfAdjustBtn").addEventListener("click", async () => {
   const input = document.getElementById("walletSelfAdjustInput");
   const delta = parseFloat(input.value);
   if (!delta) { toast("Enter a non-zero amount"); return; }
   try {
-    await db.ref().update({ ["wallets/" + currentUser.uid]: firebase.database.ServerValue.increment(delta) });
+    const ledgerKey = db.ref("fundLedger").push().key;
+    const updates = {};
+    updates["wallets/" + currentUser.uid] = firebase.database.ServerValue.increment(delta);
+    updates["funds/cash"] = firebase.database.ServerValue.increment(-delta);
+    updates["fundLedger/" + ledgerKey] = {
+      type: "cash", amount: -delta, date: todayStr(), month: currentMonthStr(),
+      isCarryForward: false, isWalletTransfer: true,
+      note: (delta > 0 ? "Wallet top-up — " : "Wallet withdrawal — ") + currentUser.name,
+      createdBy: currentUser.uid, createdAt: Date.now()
+    };
+    await db.ref().update(updates);
     input.value = "";
     toast("Wallet updated");
   } catch (err) {
@@ -909,22 +1000,33 @@ function renderCategoryManageList() {
 }
 
 /* =========================================================
-   ADMIN — funds
+   ADMIN — funds (dated top-ups, logged to fundLedger)
    ========================================================= */
 function renderFundsUI() {
   document.getElementById("adminBankBalance").textContent = formatCurrency(fundsCache.bank || 0);
   document.getElementById("adminCashBalance").textContent = formatCurrency(fundsCache.cash || 0);
 }
 
-document.getElementById("updateBankBtn").addEventListener("click", () => adjustFund("bank", "bankAdjustInput"));
-document.getElementById("updateCashBtn").addEventListener("click", () => adjustFund("cash", "cashAdjustInput"));
+document.getElementById("updateBankBtn").addEventListener("click", () => adjustFund("bank", "bankAdjustInput", "bankAdjustDate"));
+document.getElementById("updateCashBtn").addEventListener("click", () => adjustFund("cash", "cashAdjustInput", "cashAdjustDate"));
 
-async function adjustFund(path, inputId) {
+async function adjustFund(path, inputId, dateInputId) {
   const input = document.getElementById(inputId);
+  const dateInput = document.getElementById(dateInputId);
   const delta = parseFloat(input.value);
+  const date = dateInput.value || todayStr();
   if (!delta) { toast("Enter a non-zero amount"); return; }
+
   try {
-    await db.ref().update({ ["funds/" + path]: firebase.database.ServerValue.increment(delta) });
+    const ledgerKey = db.ref("fundLedger").push().key;
+    const updates = {};
+    updates["funds/" + path] = firebase.database.ServerValue.increment(delta);
+    updates["fundLedger/" + ledgerKey] = {
+      type: path, amount: delta, date, month: date.slice(0, 7),
+      isCarryForward: false, isWalletTransfer: false,
+      createdBy: currentUser.uid, createdAt: Date.now()
+    };
+    await db.ref().update(updates);
     input.value = "";
     toast((path === "bank" ? "Bank" : "Cash") + " balance updated");
   } catch (err) {
@@ -932,8 +1034,36 @@ async function adjustFund(path, inputId) {
   }
 }
 
+function renderFundActivity() {
+  const el = document.getElementById("fundActivityList");
+  if (!el) return;
+
+  const rows = Object.entries(fundLedgerCache)
+    .sort((a, b) => (b[1].date + b[1].createdAt).localeCompare(a[1].date + a[1].createdAt))
+    .slice(0, 30);
+
+  if (rows.length === 0) {
+    el.innerHTML = `<p class="empty-hint">No fund activity yet.</p>`;
+    return;
+  }
+
+  el.innerHTML = rows.map(([id, r]) => {
+    const label = r.note || `${r.type === "bank" ? "Bank" : "Cash"} ${Number(r.amount) >= 0 ? "top-up" : "correction"}`;
+    const positive = Number(r.amount) >= 0;
+    return `
+      <div class="expense-row fund-row-static">
+        ${categoryBadgeHtml(r.type, r.type === "bank" ? "Bank" : "Cash", false)}
+        <span class="expense-info">
+          <span class="expense-desc">${escapeHtml(label)}</span>
+          <span class="expense-meta">${r.type === "bank" ? "Bank" : "Cash"} · ${formatDate(r.date)}</span>
+        </span>
+        <span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>
+      </div>`;
+  }).join("");
+}
+
 /* =========================================================
-   ADMIN — wallets (admin can adjust anyone's)
+   ADMIN — wallets (admin can adjust anyone's, also moves cash)
    ========================================================= */
 function renderWalletUI() {
   const el = document.getElementById("walletManageList");
@@ -941,10 +1071,10 @@ function renderWalletUI() {
 
   el.innerHTML = ids.length
     ? ids.map(uid => `
-      <div class="wallet-row" style="flex-wrap:wrap;gap:8px;">
+      <div class="wallet-row">
         <span class="wallet-name">${escapeHtml(usersDirectory[uid].name)}</span>
         <span class="wallet-balance">${formatCurrency((walletsCache && walletsCache[uid]) || 0)}</span>
-        <div class="inline-form" style="flex:1 1 100%;margin-top:6px;">
+        <div class="inline-form">
           <input type="number" step="0.01" placeholder="Amount (+/-)" id="walletInput-${uid}" inputmode="decimal">
           <button type="button" class="btn-secondary" data-uid="${uid}" data-action="wallet-update">Update</button>
         </div>
@@ -958,7 +1088,17 @@ function renderWalletUI() {
       const delta = parseFloat(input.value);
       if (!delta) { toast("Enter a non-zero amount"); return; }
       try {
-        await db.ref().update({ ["wallets/" + uid]: firebase.database.ServerValue.increment(delta) });
+        const ledgerKey = db.ref("fundLedger").push().key;
+        const updates = {};
+        updates["wallets/" + uid] = firebase.database.ServerValue.increment(delta);
+        updates["funds/cash"] = firebase.database.ServerValue.increment(-delta);
+        updates["fundLedger/" + ledgerKey] = {
+          type: "cash", amount: -delta, date: todayStr(), month: currentMonthStr(),
+          isCarryForward: false, isWalletTransfer: true,
+          note: (delta > 0 ? "Wallet top-up — " : "Wallet withdrawal — ") + userNameForUid(uid),
+          createdBy: currentUser.uid, createdAt: Date.now()
+        };
+        await db.ref().update(updates);
         input.value = "";
         toast("Wallet updated");
       } catch (err) {
@@ -972,3 +1112,10 @@ function renderWalletUI() {
    BOOT
    ========================================================= */
 populateLoginDropdown();
+document.getElementById("bankAdjustDate").value = todayStr();
+document.getElementById("cashAdjustDate").value = todayStr();
+
+(function initLockoutNotice() {
+  const remaining = loginLockoutRemainingMs();
+  if (remaining > 0) document.getElementById("loginError").textContent = lockoutMessage(remaining);
+})();
