@@ -88,11 +88,14 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><span>Recent expenses</span></div>
-        <div id="recentExpensesList" class="expense-list">
-          <p class="empty-hint">No expenses logged yet.</p>
-        </div>
-      </div>
+  <div class="card-header card-header-row">
+    <span>Recent expenses</span>
+    <button type="button" id="viewAllExpensesBtn" class="view-all-btn">View all</button>
+  </div>
+  <div id="recentExpensesList" class="expense-list">
+    <p class="empty-hint">No expenses logged yet.</p>
+  </div>
+</div>
 
       <div class="card">
         <div class="card-header"><span>Notes for <span id="notesMonthLabel">this month</span></span></div>
@@ -293,6 +296,20 @@
       </form>
     </div>
   </div>
+
+  <!-- ---------- ALL EXPENSES OVERLAY ---------- -->
+<div id="allExpensesOverlay" class="overlay hidden">
+  <div class="overlay-panel">
+    <div class="overlay-header">
+      <button type="button" id="closeAllExpensesBtn" class="icon-btn" aria-label="Close">✕</button>
+      <h2>All expenses</h2>
+      <span class="icon-btn" style="visibility:hidden;"></span>
+    </div>
+    <div id="allExpensesList" class="expense-list" style="margin-top:4px;">
+      <p class="empty-hint">No expenses logged yet.</p>
+    </div>
+  </div>
+</div>
 
   <button type="button" id="fabAddExpense" class="fab" aria-label="Add expense">
     <span class="fab-icon">+</span><span class="fab-label">Add expense</span>
