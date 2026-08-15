@@ -346,10 +346,11 @@ function attachDataListeners() {
   });
 
   db.ref("expenses").on("value", snap => {
-    expensesCache = snap.val() || {};
-    renderDashboard();
-    populateFilterYearOptions();
-    if (currentView === "analysis") applyFilters();
+  expensesCache = snap.val() || {};
+  renderDashboard();
+  populateFilterYearOptions();
+  if (currentView === "analysis") applyFilters();
+  if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
   });
 
   db.ref("funds").on("value", snap => {
@@ -577,6 +578,35 @@ function renderRecentExpenses() {
   container.innerHTML = all.map(([id, e]) => expenseRowHtml(id, e)).join("");
   container.querySelectorAll(".expense-row").forEach(row => {
     row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
+  });
+}
+
+document.getElementById("viewAllExpensesBtn").addEventListener("click", () => {
+  renderAllExpensesList();
+  document.getElementById("allExpensesOverlay").classList.remove("hidden");
+});
+document.getElementById("closeAllExpensesBtn").addEventListener("click", () => {
+  document.getElementById("allExpensesOverlay").classList.add("hidden");
+});
+document.getElementById("allExpensesOverlay").addEventListener("click", (e) => {
+  if (e.target.id === "allExpensesOverlay") document.getElementById("allExpensesOverlay").classList.add("hidden");
+});
+
+function renderAllExpensesList() {
+  const all = Object.entries(expensesCache)
+    .sort((a, b) => (b[1].date + (b[1].createdAt || 0)).localeCompare(a[1].date + (a[1].createdAt || 0)));
+
+  const container = document.getElementById("allExpensesList");
+  if (all.length === 0) {
+    container.innerHTML = `<p class="empty-hint">No expenses logged yet.</p>`;
+    return;
+  }
+  container.innerHTML = all.map(([id, e]) => expenseRowHtml(id, e)).join("");
+  container.querySelectorAll(".expense-row").forEach(row => {
+    row.addEventListener("click", () => {
+      document.getElementById("allExpensesOverlay").classList.add("hidden");
+      openExpenseForm("edit", row.dataset.id);
+    });
   });
 }
 
