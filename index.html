@@ -58,7 +58,7 @@
         </div>
 
         <div class="hero-figure-wrap">
-          <span class="hero-label" id="heroFigureLabel">Total available</span>
+          <span class="hero-label" id="heroFigureLabel">Available this month</span>
           <span class="hero-figure" id="statTotalAvailable">₹0</span>
         </div>
 
@@ -67,23 +67,19 @@
             <span class="hero-mini-label">Spent this month</span>
             <span class="hero-mini-value negative" id="statTotalExpense">₹0</span>
           </div>
-          <div class="hero-mini">
-            <span class="hero-mini-label">Net this month</span>
-            <span class="hero-mini-value" id="statNet">₹0</span>
-          </div>
-          <div class="hero-mini">
+        <div class="hero-mini">
             <span class="hero-mini-label">Bank added</span>
             <span class="hero-mini-value" id="statBank">₹0</span>
-          </div>
-          <div class="hero-mini">
+        </div>
+        <div class="hero-mini">
             <span class="hero-mini-label">Cash added</span>
             <span class="hero-mini-value" id="statCash">₹0</span>
-          </div>
-          <div class="hero-mini">
+        </div>
+        <div class="hero-mini">
             <span class="hero-mini-label">My wallet</span>
             <span class="hero-mini-value" id="statWallet">₹0</span>
-          </div>
         </div>
+      </div>
 
         <div class="hero-actions">
           <button type="button" class="hero-pill" data-view="analysis">Analysis</button>
@@ -155,11 +151,14 @@
       <div class="card">
         <div class="card-header"><span>Your balance</span></div>
         <div class="wallet-hero-value" id="myWalletBalance">₹0</div>
+        <div id="walletSelfEditWrap">
         <div class="inline-form">
           <input type="number" id="walletSelfAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="walletSelfAdjustBtn" class="btn-secondary">Update</button>
-        </div>
-        <p class="hint-text">Positive adds to your wallet and takes that much out of shared cash. Negative returns money to shared cash.</p>
+      </div>
+          <p class="hint-text">Positive adds to your wallet and takes that much out of shared cash. Negative returns money to shared cash.</p>
+      </div>
+          <p class="hint-text hidden" id="walletAdminOnlyNote">Only the admin can edit wallet amounts.</p>
       </div>
 
       <div class="card">
