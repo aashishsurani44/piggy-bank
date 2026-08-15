@@ -1,9 +1,8 @@
 /* =========================================================
    PIGGY-BANK — expense tracker
-   Visual language: clean white surfaces, a vivid teal brand
-   color, fully-rounded "pill" buttons and dropdowns, and a
-   dark gradient hero card on the dashboard — inspired by
-   Splitwise's friendly, high-contrast mobile UI.
+   Clean white surfaces, a vivid teal brand color, fully-
+   rounded "pill" buttons/dropdowns, and a dark gradient hero
+   card on the dashboard that recolors by calendar month.
    ========================================================= */
 
 :root {
@@ -304,6 +303,7 @@ textarea { resize: vertical; font-family: var(--font-body); }
   padding: 18px 20px 22px;
   color: #fff;
   margin-bottom: 16px;
+  transition: background 0.25s ease;
 }
 
 .hero-top {
@@ -331,6 +331,8 @@ textarea { resize: vertical; font-family: var(--font-body); }
   cursor: pointer;
 }
 .month-arrow:active { background: rgba(255,255,255,0.26); }
+.month-arrow:disabled { opacity: 0.3; cursor: default; }
+.month-arrow:disabled:active { background: rgba(255,255,255,0.14); }
 
 .hero-figure-wrap {
   display: flex;
@@ -371,6 +373,7 @@ textarea { resize: vertical; font-family: var(--font-body); }
   flex-direction: column;
   gap: 4px;
 }
+.hero-mini:nth-child(5) { grid-column: 1 / -1; }
 
 .hero-mini-label {
   font-size: 0.68rem;
@@ -466,6 +469,9 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .expense-row:last-child { border-bottom: none; }
 .expense-row:active { background: var(--bg); }
 
+.fund-row-static { cursor: default; }
+.fund-row-static:active { background: none; }
+
 .expense-info { flex: 1 1 auto; min-width: 0; }
 
 .expense-desc {
@@ -513,31 +519,8 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .filter-wrap select { width: auto; flex: 1 1 132px; }
 .filter-wrap .btn-primary { flex: 1 1 100%; padding: 11px; }
 
-/* ---------------- summary grid ---------------- */
-.summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.summary-item { display: flex; flex-direction: column; gap: 2px; }
-
-.summary-value {
-  font-variant-numeric: tabular-nums;
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.summary-label {
-  font-size: 0.72rem;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 /* ---------------- charts ---------------- */
 .chart-wrap { position: relative; height: 220px; margin-bottom: 8px; }
-.chart-wrap-small { height: 180px; }
 
 .breakdown-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 
@@ -567,10 +550,13 @@ textarea { resize: vertical; font-family: var(--font-body); }
 /* ---------------- admin / manage lists ---------------- */
 .inline-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 4px;
 }
 .inline-form input { flex: 1 1 auto; }
+.inline-form input[type="date"] { flex: 1 1 132px; }
+.inline-form input[type="number"] { flex: 1 1 110px; }
 .inline-form button { flex: 0 0 auto; }
 
 .manage-list { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
@@ -618,6 +604,8 @@ textarea { resize: vertical; font-family: var(--font-body); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 10px 2px;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
@@ -630,6 +618,8 @@ textarea { resize: vertical; font-family: var(--font-body); }
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
+
+.wallet-row .inline-form { flex: 1 1 100%; margin-top: 4px; }
 
 .wallet-hero-value {
   font-family: var(--font-heading);
