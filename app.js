@@ -97,11 +97,6 @@ function shiftMonth(yyyymm, delta) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
 }
 
-function monthEndDate(yyyymm) {
-  const [y, m] = yyyymm.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  return yyyymm + "-" + String(lastDay).padStart(2, "0");
-}
 
 function escapeHtml(str) {
   if (str === undefined || str === null) return "";
@@ -519,28 +514,15 @@ function fundNetForMonth(type, yyyymm) {
   return total;
 }
 
-// Reconstructed bank/cash balance as it stood at the end of a given month.
-function fundBalanceAsOfMonthEnd(type, yyyymm) {
-  const cutoff = monthEndDate(yyyymm);
-  let total = 0;
-  Object.values(fundLedgerCache).forEach(r => {
-    if (r.type === type && !r.isCarryForward && r.date <= cutoff) total += Number(r.amount);
-  });
-  Object.values(expensesCache).forEach(e => {
-    if (!e.fromWallet && e.paymentMode && e.paymentMode.toLowerCase() === type && e.date <= cutoff) {
-      total -= Number(e.amount);
-    }
-  });
-  return total;
-}
 
+// DELETE the monthEndDate() and fundBalanceAsOfMonthEnd() functions entirely — no longer used.
+
+// REPLACE renderDashboard() with:
 function renderDashboard() {
   if (!currentUser) return;
   document.getElementById("currentMonthLabel").textContent = monthLabel(selectedMonth);
   updateMonthNavButtons();
   applyHeroColor();
-
-  const isCurrentMonth = selectedMonth === currentMonthStr();
 
   const spentThisMonth = Object.values(expensesCache)
     .filter(e => e.month === selectedMonth)
@@ -551,13 +533,10 @@ function renderDashboard() {
   const cashAdded = fundNetForMonth("cash", selectedMonth);
   setStatValue("statBank", bankAdded);
   setStatValue("statCash", cashAdded);
-  setStatValue("statNet", (bankAdded + cashAdded) - spentThisMonth);
 
-  const totalAvailable = isCurrentMonth
-    ? Number(fundsCache.bank || 0) + Number(fundsCache.cash || 0)
-    : fundBalanceAsOfMonthEnd("bank", selectedMonth) + fundBalanceAsOfMonthEnd("cash", selectedMonth);
-  setStatValue("statTotalAvailable", totalAvailable);
-  document.getElementById("heroFigureLabel").textContent = isCurrentMonth ? "Total available" : "Available as of month end";
+  // Available for this month only: what was added this month minus what was spent this month.
+  const available = (bankAdded + cashAdded) - spentThisMonth;
+  setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
@@ -914,7 +893,9 @@ function renderForecastResult(breakdown) {
 /* =========================================================
    WALLET PAGE (self top-up moves money out of shared cash)
    ========================================================= */
+// REPLACE the walletSelfAdjustBtn click handler's opening lines — add the admin guard:
 document.getElementById("walletSelfAdjustBtn").addEventListener("click", async () => {
+  if (currentUser.role !== "admin") { toast("Only admin can edit wallet amounts"); return; }
   const input = document.getElementById("walletSelfAdjustInput");
   const delta = parseFloat(input.value);
   if (!delta) { toast("Enter a non-zero amount"); return; }
@@ -937,8 +918,13 @@ document.getElementById("walletSelfAdjustBtn").addEventListener("click", async (
   }
 });
 
+// REPLACE the start of renderWalletPage() — add the show/hide toggle:
 function renderWalletPage() {
   if (!currentUser) return;
+  const isAdmin = currentUser.role === "admin";
+  document.getElementById("walletSelfEditWrap").classList.toggle("hidden", !isAdmin);
+  document.getElementById("walletAdminOnlyNote").classList.toggle("hidden", isAdmin);
+
   const mine = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   document.getElementById("myWalletBalance").textContent = formatCurrency(mine);
 
