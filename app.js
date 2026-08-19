@@ -182,7 +182,6 @@ db.ref("users").on("value", snap => {
   if (currentUser) {
     renderDashboard();
     if (currentView === "wallet") renderWalletPage();
-    if (currentView === "admin") renderWalletUI();
   }
 });
 
@@ -320,7 +319,7 @@ function switchView(view) {
   if (view === "dashboard") renderDashboard();
   if (view === "analysis") { populateFilterYearOptions(); applyFilters(); }
   if (view === "wallet") renderWalletPage();
-  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); }
+  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); }
 }
 
 document.querySelectorAll(".nav-btn").forEach(btn => {
