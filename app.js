@@ -944,7 +944,6 @@ function renderForecastResult(breakdown) {
    ========================================================= */
 // REPLACE the walletSelfAdjustBtn click handler's opening lines — add the admin guard:
 document.getElementById("walletSelfAdjustBtn").addEventListener("click", async () => {
-  if (currentUser.role !== "admin") { toast("Only admin can edit wallet amounts"); return; }
   const input = document.getElementById("walletSelfAdjustInput");
   const delta = parseFloat(input.value);
   if (!delta) { toast("Enter a non-zero amount"); return; }
@@ -969,8 +968,6 @@ document.getElementById("walletSelfAdjustBtn").addEventListener("click", async (
 
 // REPLACE the start of renderWalletPage() — add the show/hide toggle:
 function renderWalletPage() {
-  if (!currentUser) return;
-  const isAdmin = currentUser.role === "admin";
   document.getElementById("walletSelfEditWrap").classList.toggle("hidden", !isAdmin);
   document.getElementById("walletAdminOnlyNote").classList.toggle("hidden", isAdmin);
 
