@@ -156,7 +156,7 @@
         <div class="wallet-hero-value" id="myWalletBalance">₹0</div>
         <div id="walletSelfEditWrap">
         <div class="inline-form">
-          <input type="number" id="walletSelfAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <input type="text" id="walletSelfAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="walletSelfAdjustBtn" class="btn-secondary">Update</button>
       </div>
           <p class="hint-text">Positive adds to your wallet and takes that much out of shared cash. Negative returns money to shared cash.</p>
@@ -216,18 +216,19 @@
         <p class="hint-text">Enter a positive number to top up, negative to correct down. Balances are allowed to go negative.</p>
 
         <div class="fund-row">
-          <span class="fund-name">Bank balance</span>
-          <span class="fund-value" id="adminBankBalance">₹0</span>
+          <span class="fund-name">Add Bank balance</span>
         </div>
         <div class="inline-form">
           <input type="date" id="bankAdjustDate">
-          <input type="number" id="bankAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <input type="text" id="bankAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="updateBankBtn" class="btn-secondary">Update</button>
         </div>
-
+        <div class="fund-row">
+          <span class="fund-name">Add Cash balance</span>
+        </div>
         <div class="inline-form">
           <input type="date" id="cashAdjustDate">
-          <input type="number" id="cashAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
+          <input type="text" id="cashAdjustInput" placeholder="Amount (+/-)" step="0.01" inputmode="decimal">
           <button type="button" id="updateCashBtn" class="btn-secondary">Update</button>
         </div>
       </div>
