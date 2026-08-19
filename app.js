@@ -1110,7 +1110,7 @@ function renderWalletUI() {
         <span class="wallet-name">${escapeHtml(usersDirectory[uid].name)}</span>
         <span class="wallet-balance">${formatCurrency((walletsCache && walletsCache[uid]) || 0)}</span>
         <div class="inline-form">
-          <input type="number" step="0.01" placeholder="Amount (+/-)" id="walletInput-${uid}" inputmode="decimal">
+          <input type="text" step="0.01" placeholder="Amount (+/-)" id="walletInput-${uid}" inputmode="decimal">
           <button type="button" class="btn-secondary" data-uid="${uid}" data-action="wallet-update">Update</button>
         </div>
       </div>`).join("")
