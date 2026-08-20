@@ -571,7 +571,8 @@ textarea { resize: vertical; font-family: var(--font-body); }
   gap: 8px;
   margin-bottom: 4px;
 }
-.inline-form input { flex: 1 1 auto; }
+.inline-form input[type="number"],
+.inline-form input.amount-input { flex: 1 1 110px; }
 .inline-form input[type="date"] { flex: 1 1 132px; }
 .inline-form input[type="number"] { flex: 1 1 110px; }
 .inline-form button { flex: 0 0 auto; }
