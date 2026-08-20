@@ -182,6 +182,7 @@ db.ref("users").on("value", snap => {
   if (currentUser) {
     renderDashboard();
     if (currentView === "wallet") renderWalletPage();
+    if (currentView === "admin") renderWalletUI();
   }
 });
 
@@ -319,7 +320,7 @@ function switchView(view) {
   if (view === "dashboard") renderDashboard();
   if (view === "analysis") { populateFilterYearOptions(); applyFilters(); }
   if (view === "wallet") renderWalletPage();
-  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); }
+  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); renderWalletPage(); }
 }
 
 document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -968,9 +969,7 @@ document.getElementById("walletSelfAdjustBtn").addEventListener("click", async (
 
 // REPLACE the start of renderWalletPage() — add the show/hide toggle:
 function renderWalletPage() {
-  document.getElementById("walletSelfEditWrap").classList.toggle("hidden", !isAdmin);
-  document.getElementById("walletAdminOnlyNote").classList.toggle("hidden", isAdmin);
-
+  if (!currentUser) return;
   const mine = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   document.getElementById("myWalletBalance").textContent = formatCurrency(mine);
 
@@ -1106,7 +1105,7 @@ function renderWalletUI() {
         <span class="wallet-name">${escapeHtml(usersDirectory[uid].name)}</span>
         <span class="wallet-balance">${formatCurrency((walletsCache && walletsCache[uid]) || 0)}</span>
         <div class="inline-form">
-          <input type="text" step="0.01" placeholder="Amount (+/-)" id="walletInput-${uid}" inputmode="decimal">
+          <input type="text" class="amount-input" placeholder="Amount (+/-)" id="walletInput-${uid}" inputmode="text">
           <button type="button" class="btn-secondary" data-uid="${uid}" data-action="wallet-update">Update</button>
         </div>
       </div>`).join("")
