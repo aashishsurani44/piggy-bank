@@ -305,10 +305,46 @@
     <div class="overlay-header">
       <button type="button" id="closeAllExpensesBtn" class="icon-btn" aria-label="Close">✕</button>
       <h2>All expenses</h2>
-      <span class="icon-btn" style="visibility:hidden;"></span>
+      <button type="button" id="openExpenseFilterBtn" class="save-link-btn">Filter</button>
     </div>
     <div id="allExpensesList" class="expense-list" style="margin-top:4px;">
       <p class="empty-hint">No expenses logged yet.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- EXPENSE FILTER SHEET ---------- -->
+<div id="expenseFilterOverlay" class="overlay hidden">
+  <div class="overlay-panel filter-sheet-panel">
+    <div class="overlay-header">
+      <button type="button" id="closeExpenseFilterBtn" class="icon-btn" aria-label="Close">✕</button>
+      <h2>Filters</h2>
+      <button type="button" id="clearExpenseFilterBtn" class="save-link-btn">Clear</button>
+    </div>
+    <div class="filter-sheet-body">
+      <div class="filter-section">
+        <div class="filter-section-title">Year</div>
+        <div class="chip-row" id="chipYear"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-section-title">Month</div>
+        <div class="chip-row" id="chipMonth"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-section-title">Category</div>
+        <div class="chip-row" id="chipCategory"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-section-title">Payment mode</div>
+        <div class="chip-row" id="chipPaymentMode"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-section-title">Paid by</div>
+        <div class="chip-row" id="chipPaidBy"></div>
+      </div>
+    </div>
+    <div class="filter-sheet-footer">
+      <button type="button" id="applyExpenseFilterBtn" class="btn-primary btn-block">Show results</button>
     </div>
   </div>
 </div>
