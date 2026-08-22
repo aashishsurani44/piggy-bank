@@ -598,13 +598,26 @@ document.getElementById("allExpensesOverlay").addEventListener("click", (e) => {
   if (e.target.id === "allExpensesOverlay") document.getElementById("allExpensesOverlay").classList.add("hidden");
 });
 
+let expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "" };
+
+function getFilteredAllExpenses() {
+  return Object.entries(expensesCache).filter(([, e]) => {
+    if (expenseListFilters.year && e.date.slice(0, 4) !== expenseListFilters.year) return false;
+    if (expenseListFilters.month && e.date.slice(5, 7) !== expenseListFilters.month) return false;
+    if (expenseListFilters.categoryId && e.categoryId !== expenseListFilters.categoryId) return false;
+    if (expenseListFilters.paymentMode && e.paymentMode !== expenseListFilters.paymentMode) return false;
+    if (expenseListFilters.paidByUid && e.paidByUid !== expenseListFilters.paidByUid) return false;
+    return true;
+  });
+}
+
 function renderAllExpensesList() {
-  const all = Object.entries(expensesCache)
+  const all = getFilteredAllExpenses()
     .sort((a, b) => (b[1].date + (b[1].createdAt || 0)).localeCompare(a[1].date + (a[1].createdAt || 0)));
 
   const container = document.getElementById("allExpensesList");
   if (all.length === 0) {
-    container.innerHTML = `<p class="empty-hint">No expenses logged yet.</p>`;
+    container.innerHTML = `<p class="empty-hint">No expenses match these filters.</p>`;
     return;
   }
   container.innerHTML = all.map(([id, e]) => expenseRowHtml(id, e)).join("");
@@ -615,6 +628,75 @@ function renderAllExpensesList() {
     });
   });
 }
+
+/* ---- shopping-app style filter sheet ---- */
+function chipRowHtml(groupKey, options, activeValue) {
+  return options.map(opt => `
+    <button type="button" class="chip${opt.value === activeValue ? " chip-active" : ""}" data-group="${groupKey}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</button>
+  `).join("");
+}
+
+function renderExpenseFilterSheet() {
+  const years = new Set(Object.values(expensesCache).map(e => e.date.slice(0, 4)));
+  years.add(String(new Date().getFullYear()));
+  const sortedYears = Array.from(years).sort((a, b) => b.localeCompare(a));
+  document.getElementById("chipYear").innerHTML = chipRowHtml("year",
+    [{ value: "", label: "All" }, ...sortedYears.map(y => ({ value: y, label: y }))], expenseListFilters.year);
+
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  document.getElementById("chipMonth").innerHTML = chipRowHtml("month",
+    [{ value: "", label: "All" }, ...MONTH_NAMES.map((m, i) => ({ value: String(i + 1).padStart(2, "0"), label: m }))],
+    expenseListFilters.month);
+
+  const catIds = Object.keys(categoriesCache).sort((a, b) => (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
+  document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId",
+    [{ value: "", label: "All" }, ...catIds.map(id => ({ value: id, label: categoriesCache[id].name }))],
+    expenseListFilters.categoryId);
+
+  document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode",
+    [{ value: "", label: "All" }, { value: "Cash", label: "Cash" }, { value: "Bank", label: "Bank" }],
+    expenseListFilters.paymentMode);
+
+  const uids = sortedUserIds();
+  document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid",
+    [{ value: "", label: "All" }, ...uids.map(uid => ({ value: uid, label: usersDirectory[uid].name }))],
+    expenseListFilters.paidByUid);
+
+  document.querySelectorAll("#expenseFilterOverlay .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      expenseListFilters[chip.dataset.group] = chip.dataset.value;
+      renderExpenseFilterSheet();
+    });
+  });
+
+  const count = getFilteredAllExpenses().length;
+  document.getElementById("applyExpenseFilterBtn").textContent = `Show ${count} result${count === 1 ? "" : "s"}`;
+}
+
+function updateFilterTriggerLabel() {
+  const count = Object.values(expenseListFilters).filter(v => v).length;
+  document.getElementById("openExpenseFilterBtn").textContent = count ? `Filter (${count})` : "Filter";
+}
+
+document.getElementById("openExpenseFilterBtn").addEventListener("click", () => {
+  renderExpenseFilterSheet();
+  document.getElementById("expenseFilterOverlay").classList.remove("hidden");
+});
+document.getElementById("closeExpenseFilterBtn").addEventListener("click", () => {
+  document.getElementById("expenseFilterOverlay").classList.add("hidden");
+});
+document.getElementById("expenseFilterOverlay").addEventListener("click", (e) => {
+  if (e.target.id === "expenseFilterOverlay") document.getElementById("expenseFilterOverlay").classList.add("hidden");
+});
+document.getElementById("clearExpenseFilterBtn").addEventListener("click", () => {
+  expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "" };
+  renderExpenseFilterSheet();
+});
+document.getElementById("applyExpenseFilterBtn").addEventListener("click", () => {
+  document.getElementById("expenseFilterOverlay").classList.add("hidden");
+  updateFilterTriggerLabel();
+  renderAllExpensesList();
+});
 
 function expenseRowHtml(id, e) {
   const walletTag = e.fromWallet ? " · Wallet" : "";
@@ -848,9 +930,10 @@ function chartLibAvailable(canvasId) {
 
 function renderCategoryBreakdown(list) {
   const totals = {};
-  list.forEach(([, e]) => {
-    if (!totals[e.categoryId]) totals[e.categoryId] = { name: e.categoryName, total: 0 };
+  list.forEach(([id, e]) => {
+    if (!totals[e.categoryId]) totals[e.categoryId] = { name: e.categoryName, total: 0, items: [] };
     totals[e.categoryId].total += Number(e.amount);
+    totals[e.categoryId].items.push([id, e]);
   });
   const rows = Object.entries(totals).sort((a, b) => b[1].total - a[1].total);
   const grand = rows.reduce((s, [, v]) => s + v.total, 0);
@@ -864,15 +947,23 @@ function renderCategoryBreakdown(list) {
   }
 
   listEl.innerHTML = rows.map(([catId, v]) => `
-    <div class="breakdown-row">
-      ${categoryBadgeHtml(catId, v.name, true)}
-      <span class="breakdown-name">${escapeHtml(v.name)}</span>
-      <span class="breakdown-pct">${grand ? Math.round((v.total / grand) * 100) : 0}%</span>
-      <span class="breakdown-amount">${formatCurrency(v.total)}</span>
+    <div class="breakdown-group">
+      <button type="button" class="breakdown-row breakdown-toggle" data-cat="${catId}">
+        ${categoryBadgeHtml(catId, v.name, true)}
+        <span class="breakdown-name">${escapeHtml(v.name)}</span>
+        <span class="breakdown-pct">${grand ? Math.round((v.total / grand) * 100) : 0}%</span>
+        <span class="breakdown-amount">${formatCurrency(v.total)}</span>
+        <span class="breakdown-chevron">›</span>
+      </button>
+      <div class="breakdown-detail hidden" id="breakdownDetail-${catId}"></div>
     </div>`).join("");
 
-    if (!chartLibAvailable("categoryPieChart")) return;
-    try {
+  listEl.querySelectorAll(".breakdown-toggle").forEach(btn => {
+    btn.addEventListener("click", () => toggleCategoryDrilldown(btn.dataset.cat, totals[btn.dataset.cat].items));
+  });
+
+  if (!chartLibAvailable("categoryPieChart")) return;
+  try {
     const ctx = document.getElementById("categoryPieChart").getContext("2d");
     charts.categoryPieChart = new Chart(ctx, {
       type: "doughnut",
@@ -882,8 +973,26 @@ function renderCategoryBreakdown(list) {
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
     });
-     }
-   catch (err) { /* chart is a visual extra — list above still works */ }
+  } catch (err) { /* chart is a visual extra — list above still works */ }
+}
+
+function toggleCategoryDrilldown(catId, items) {
+  const detail = document.getElementById("breakdownDetail-" + catId);
+  const btn = document.querySelector(`.breakdown-toggle[data-cat="${catId}"]`);
+  const isOpen = !detail.classList.contains("hidden");
+
+  document.querySelectorAll(".breakdown-detail").forEach(d => { d.classList.add("hidden"); d.innerHTML = ""; });
+  document.querySelectorAll(".breakdown-toggle").forEach(b => b.classList.remove("breakdown-toggle-open"));
+
+  if (isOpen) return;
+
+  const sorted = [...items].sort((a, b) => b[1].date.localeCompare(a[1].date));
+  detail.innerHTML = sorted.map(([id, e]) => expenseRowHtml(id, e)).join("");
+  detail.querySelectorAll(".expense-row").forEach(row => {
+    row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
+  });
+  detail.classList.remove("hidden");
+  if (btn) btn.classList.add("breakdown-toggle-open");
 }
 
 /* =========================================================
