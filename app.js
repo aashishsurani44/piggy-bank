@@ -414,7 +414,7 @@ async function checkMonthRollover() {
 
       // Leftover = whatever carried INTO that month + that month's own top-ups - that month's spend.
       const bankLeftover = carryForwardForMonth(previousMonth, "bank") + fundNetForMonth("bank", previousMonth) - bankSpentPrev;
-      const cashLeftover = carryForwardForMonth(previousMonth, "cash") + fundNetForMonth("cash", previousMonth) - cashSpentPrev;
+      const cashLeftover = carryForwardForMonth(previousMonth, "cash") + fundNetForMonth("cash", previousMonth) + walletTransferNetForMonth(previousMonth) - cashSpentPrev;
 
       const updates = {};
       if (bankLeftover !== 0) {
@@ -515,17 +515,22 @@ function setStatValue(elId, value) {
   el.classList.toggle("negative", value < 0);
 }
 
-// Net ledger activity (top-ups/corrections/wallet-transfers, excluding carry-forward markers) for one month.
 function fundNetForMonth(type, yyyymm) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
-    if (r.type === type && !r.isCarryForward && r.month === yyyymm) total += Number(r.amount);
+    if (r.type === type && !r.isCarryForward && !r.isWalletTransfer && r.month === yyyymm) total += Number(r.amount);
   });
   return total;
 }
 
-// Amount automatically carried in at the start of a month (from the previous month's leftover).
-// Pass a type ("bank"/"cash") to get just that fund's carry-in, or omit for the combined total.
+function walletTransferNetForMonth(yyyymm) {
+  let total = 0;
+  Object.values(fundLedgerCache).forEach(r => {
+    if (r.isWalletTransfer && r.month === yyyymm) total += Number(r.amount);
+  });
+  return total;
+}
+
 function carryForwardForMonth(yyyymm, type) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
@@ -556,7 +561,8 @@ function renderDashboard() {
 // Available for this month: whatever carried in from last month, plus this month's
   // own added amounts, minus this month's spend.
   const carriedIn = carryForwardForMonth(selectedMonth);
-  const available = carriedIn + bankAdded + cashAdded - spentThisMonth;
+  const walletTransfers = walletTransferNetForMonth(selectedMonth);
+  const available = carriedIn + bankAdded + cashAdded + walletTransfers - spentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
@@ -833,6 +839,13 @@ function applyFilters() {
 
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
+function chartLibAvailable(canvasId) {
+  if (typeof Chart !== "undefined") return true;
+  const wrap = document.getElementById(canvasId).closest(".chart-wrap");
+  if (wrap) wrap.innerHTML = `<p class="empty-hint">Chart library failed to load — check your internet connection and reload.</p>`;
+  return false;
+}
+
 function renderCategoryBreakdown(list) {
   const totals = {};
   list.forEach(([, e]) => {
@@ -858,15 +871,19 @@ function renderCategoryBreakdown(list) {
       <span class="breakdown-amount">${formatCurrency(v.total)}</span>
     </div>`).join("");
 
-  const ctx = document.getElementById("categoryPieChart").getContext("2d");
-  charts.categoryPieChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: rows.map(([, v]) => v.name),
-      datasets: [{ data: rows.map(([, v]) => v.total), backgroundColor: rows.map(([id]) => colorForCategory(id)), borderWidth: 0 }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-  });
+    if (!chartLibAvailable("categoryPieChart")) return;
+    try {
+    const ctx = document.getElementById("categoryPieChart").getContext("2d");
+    charts.categoryPieChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: rows.map(([, v]) => v.name),
+        datasets: [{ data: rows.map(([, v]) => v.total), backgroundColor: rows.map(([id]) => colorForCategory(id)), borderWidth: 0 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+     }
+   catch (err) { /* chart is a visual extra — list above still works */ }
 }
 
 /* =========================================================
@@ -928,16 +945,19 @@ function renderForecastResult(breakdown) {
       <span class="breakdown-amount">${formatCurrency(b.amount)}</span>
     </div>`).join("");
 
-  destroyChart("forecastChart");
-  const ctx = document.getElementById("forecastChart").getContext("2d");
-  charts.forecastChart = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels: breakdown.map(b => b.name),
-      datasets: [{ data: breakdown.map(b => b.amount), backgroundColor: breakdown.map(b => colorForCategory(b.catId)), borderWidth: 0 }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-  });
+      destroyChart("forecastChart");
+  if (!chartLibAvailable("forecastChart")) return;
+  try {
+    const ctx = document.getElementById("forecastChart").getContext("2d");
+    charts.forecastChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: breakdown.map(b => b.name),
+        datasets: [{ data: breakdown.map(b => b.amount), backgroundColor: breakdown.map(b => colorForCategory(b.catId)), borderWidth: 0 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+  } catch (err) { /* chart is a visual extra — list above still works */ }
 }
 
 /* =========================================================
