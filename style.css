@@ -629,6 +629,18 @@ textarea { resize: vertical; font-family: var(--font-body); }
 }
 
 .filter-section { margin-bottom: 20px; }
+
+.date-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.date-range-row input[type="date"] { flex: 1 1 0; }
+.date-range-sep {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  flex: 0 0 auto;
+}
 .filter-section:last-child { margin-bottom: 4px; }
 
 .filter-section-title {
