@@ -598,12 +598,14 @@ document.getElementById("allExpensesOverlay").addEventListener("click", (e) => {
   if (e.target.id === "allExpensesOverlay") document.getElementById("allExpensesOverlay").classList.add("hidden");
 });
 
-let expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "" };
+let expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
 
 function getFilteredAllExpenses() {
   return Object.entries(expensesCache).filter(([, e]) => {
     if (expenseListFilters.year && e.date.slice(0, 4) !== expenseListFilters.year) return false;
     if (expenseListFilters.month && e.date.slice(5, 7) !== expenseListFilters.month) return false;
+    if (expenseListFilters.dateFrom && e.date < expenseListFilters.dateFrom) return false;
+    if (expenseListFilters.dateTo && e.date > expenseListFilters.dateTo) return false;
     if (expenseListFilters.categoryId && e.categoryId !== expenseListFilters.categoryId) return false;
     if (expenseListFilters.paymentMode && e.paymentMode !== expenseListFilters.paymentMode) return false;
     if (expenseListFilters.paidByUid && e.paidByUid !== expenseListFilters.paidByUid) return false;
@@ -637,6 +639,9 @@ function chipRowHtml(groupKey, options, activeValue) {
 }
 
 function renderExpenseFilterSheet() {
+  document.getElementById("filterDateFrom").value = expenseListFilters.dateFrom;
+  document.getElementById("filterDateTo").value = expenseListFilters.dateTo;
+
   const years = new Set(Object.values(expensesCache).map(e => e.date.slice(0, 4)));
   years.add(String(new Date().getFullYear()));
   const sortedYears = Array.from(years).sort((a, b) => b.localeCompare(a));
@@ -688,8 +693,16 @@ document.getElementById("closeExpenseFilterBtn").addEventListener("click", () =>
 document.getElementById("expenseFilterOverlay").addEventListener("click", (e) => {
   if (e.target.id === "expenseFilterOverlay") document.getElementById("expenseFilterOverlay").classList.add("hidden");
 });
+document.getElementById("filterDateFrom").addEventListener("change", () => {
+  expenseListFilters.dateFrom = document.getElementById("filterDateFrom").value;
+  renderExpenseFilterSheet();
+});
+document.getElementById("filterDateTo").addEventListener("change", () => {
+  expenseListFilters.dateTo = document.getElementById("filterDateTo").value;
+  renderExpenseFilterSheet();
+});
 document.getElementById("clearExpenseFilterBtn").addEventListener("click", () => {
-  expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "" };
+  expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
   renderExpenseFilterSheet();
 });
 document.getElementById("applyExpenseFilterBtn").addEventListener("click", () => {
