@@ -548,7 +548,7 @@ function renderDashboard() {
   updateMonthNavButtons();
   applyHeroColor();
 
-  const spentThisMonth = Object.values(expensesCache)
+    const spentThisMonth = Object.values(expensesCache)
     .filter(e => e.month === selectedMonth)
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   document.getElementById("statTotalExpense").textContent = formatCurrency(spentThisMonth);
@@ -558,11 +558,16 @@ function renderDashboard() {
   setStatValue("statBank", bankAdded);
   setStatValue("statCash", cashAdded);
 
-// Available for this month: whatever carried in from last month, plus this month's
-  // own added amounts, minus this month's spend.
+  // Available for this month: whatever carried in from last month, plus this month's
+  // own added amounts, plus/minus wallet moves, minus this month's spend from the
+  // shared pool only — wallet-funded expenses already left the pool when the money
+  // was moved into the wallet, so they must not be subtracted again here.
+  const spentFromSharedFundsThisMonth = Object.values(expensesCache)
+    .filter(e => e.month === selectedMonth && !e.fromWallet)
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const carriedIn = carryForwardForMonth(selectedMonth);
   const walletTransfers = walletTransferNetForMonth(selectedMonth);
-  const available = carriedIn + bankAdded + cashAdded + walletTransfers - spentThisMonth;
+  const available = carriedIn + bankAdded + cashAdded + walletTransfers - spentFromSharedFundsThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
