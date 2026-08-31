@@ -345,12 +345,13 @@ function attachDataListeners() {
     if (currentView === "analysis") applyFilters();
   });
 
-  db.ref("expenses").on("value", snap => {
-  expensesCache = snap.val() || {};
-  renderDashboard();
-  populateFilterYearOptions();
-  if (currentView === "analysis") applyFilters();
-  if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
+    db.ref("expenses").on("value", snap => {
+    expensesCache = snap.val() || {};
+    renderDashboard();
+    populateFilterYearOptions();
+    if (currentView === "analysis") applyFilters();
+    if (currentView === "wallet") renderWalletActivity(currentUser.uid);
+    if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
   });
 
   db.ref("funds").on("value", snap => {
@@ -370,10 +371,11 @@ function attachDataListeners() {
     renderWalletPage();
   });
 
-  db.ref("fundLedger").on("value", snap => {
+   db.ref("fundLedger").on("value", snap => {
     fundLedgerCache = snap.val() || {};
     renderDashboard();
     renderFundActivity();
+    if (currentView === "wallet") renderWalletActivity(currentUser.uid);
   });
 }
 
@@ -1099,7 +1101,7 @@ document.getElementById("walletSelfAdjustBtn").addEventListener("click", async (
     updates["funds/cash"] = firebase.database.ServerValue.increment(-delta);
     updates["fundLedger/" + ledgerKey] = {
       type: "cash", amount: -delta, date: todayStr(), month: currentMonthStr(),
-      isCarryForward: false, isWalletTransfer: true,
+      isCarryForward: false, isWalletTransfer: true, walletUid: currentUser.uid,
       note: (delta > 0 ? "Wallet top-up — " : "Wallet withdrawal — ") + currentUser.name,
       createdBy: currentUser.uid, createdAt: Date.now()
     };
@@ -1116,6 +1118,7 @@ function renderWalletPage() {
   if (!currentUser) return;
   const mine = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   document.getElementById("myWalletBalance").textContent = formatCurrency(mine);
+  renderWalletActivity(currentUser.uid);
 
   const ids = sortedUserIds();
   const listEl = document.getElementById("allWalletsList");
@@ -1126,6 +1129,58 @@ function renderWalletPage() {
           <span class="wallet-balance">${formatCurrency((walletsCache && walletsCache[uid]) || 0)}</span>
         </div>`).join("")
     : `<p class="empty-hint">No users found in /users yet.</p>`;
+}
+
+function renderWalletActivity(uid) {
+  const el = document.getElementById("walletActivityList");
+  if (!el) return;
+
+  const rows = [];
+  Object.entries(fundLedgerCache).forEach(([id, r]) => {
+    if (r.isWalletTransfer && r.walletUid === uid) {
+      rows.push({ id, date: r.date, createdAt: r.createdAt || 0, type: "transfer", amount: -Number(r.amount), note: r.note || "Wallet change" });
+    }
+  });
+  Object.entries(expensesCache).forEach(([id, e]) => {
+    if (e.fromWallet && e.paidByUid === uid) {
+      rows.push({ id, date: e.date, createdAt: e.createdAt || 0, type: "expense", amount: -Number(e.amount), note: e.description, categoryId: e.categoryId, categoryName: e.categoryName });
+    }
+  });
+  rows.sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt));
+
+  if (rows.length === 0) {
+    el.innerHTML = `<p class="empty-hint">No wallet activity yet.</p>`;
+    return;
+  }
+
+  el.innerHTML = rows.map(r => {
+    const positive = r.amount >= 0;
+    const amountHtml = `<span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>`;
+    if (r.type === "expense") {
+      return `
+        <button type="button" class="expense-row" data-id="${r.id}">
+          ${categoryBadgeHtml(r.categoryId, r.categoryName)}
+          <span class="expense-info">
+            <span class="expense-desc">${escapeHtml(r.note)}</span>
+            <span class="expense-meta">${formatDate(r.date)}</span>
+          </span>
+          ${amountHtml}
+        </button>`;
+    }
+    return `
+      <div class="expense-row fund-row-static">
+        ${categoryBadgeHtml("wallet", "Wallet")}
+        <span class="expense-info">
+          <span class="expense-desc">${escapeHtml(r.note)}</span>
+          <span class="expense-meta">${formatDate(r.date)}</span>
+        </span>
+        ${amountHtml}
+      </div>`;
+  }).join("");
+
+  el.querySelectorAll(".expense-row[data-id]").forEach(row => {
+    row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
+  });
 }
 
 /* =========================================================
@@ -1266,9 +1321,9 @@ function renderWalletUI() {
         const updates = {};
         updates["wallets/" + uid] = firebase.database.ServerValue.increment(delta);
         updates["funds/cash"] = firebase.database.ServerValue.increment(-delta);
-        updates["fundLedger/" + ledgerKey] = {
+                updates["fundLedger/" + ledgerKey] = {
           type: "cash", amount: -delta, date: todayStr(), month: currentMonthStr(),
-          isCarryForward: false, isWalletTransfer: true,
+          isCarryForward: false, isWalletTransfer: true, walletUid: uid,
           note: (delta > 0 ? "Wallet top-up — " : "Wallet withdrawal — ") + userNameForUid(uid),
           createdBy: currentUser.uid, createdAt: Date.now()
         };
