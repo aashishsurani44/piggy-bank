@@ -168,6 +168,12 @@
         <div class="card-header"><span>Everyone's wallets</span></div>
         <div id="allWalletsList" class="manage-list"></div>
       </div>
+      <div class="card">
+        <div class="card-header"><span>Wallet activity</span></div>
+        <div id="walletActivityList" class="expense-list">
+          <p class="empty-hint">No wallet activity yet.</p>
+      </div>
+</div>
     </section>
 
     <!-- ---------- FORECAST ---------- -->
@@ -214,19 +220,19 @@
       <div class="card">
         <div class="card-header"><span>Bank &amp; cash funds</span></div>
         <p class="hint-text">Enter a positive number to top up, negative to correct down. Balances are allowed to go negative.</p>
-
+        <br>
         <div class="fund-row">
           <span class="fund-name">Add Bank balance</span>
-        </div>
+        </div><br>
         <div class="inline-form">
           <input type="date" id="bankAdjustDate">
           <input type="text" id="bankAdjustInput" class="amount-input" placeholder="Amount (+/-)" inputmode="text">
           <button type="button" id="updateBankBtn" class="btn-secondary">Update</button>
         </div>
-
+        <br>
         <div>
           <span class="fund-name">Add Cash Balance</span>
-        </div>
+        </div><br>
         <div class="inline-form">
           <input type="date" id="cashAdjustDate">
           <input type="text" id="cashAdjustInput" class="amount-input" placeholder="Amount (+/-)" inputmode="text">
@@ -284,7 +290,7 @@
 
         <label class="check-row" for="expenseFromWallet">
           <input type="checkbox" id="expenseFromWallet">
-          <span>Deduct this from their personal wallet instead of the shared fund</span>
+          <span>Deduct this from the personal wallet instead of the total fund</span>
         </label>
 
         <label class="field-label" for="expenseComments">Comments</label>
