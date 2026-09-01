@@ -556,22 +556,26 @@ function renderDashboard() {
   document.getElementById("statTotalExpense").textContent = formatCurrency(spentThisMonth);
 
   const bankAdded = fundNetForMonth("bank", selectedMonth);
-  const cashAdded = fundNetForMonth("cash", selectedMonth);
   setStatValue("statBank", bankAdded);
+
+  // "Cash added" now includes last month's carried-forward leftover (plus or minus),
+  // on top of any fresh top-ups made this month — so the carry-forward is visible here
+  // directly, instead of being folded silently into Available behind the scenes.
+  const freshCashAdded = fundNetForMonth("cash", selectedMonth);
+  const carriedIn = carryForwardForMonth(selectedMonth, "cash");
+  const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-  // Available carries forward from month to month: start with whatever carried in from
-  // last month, add this month's cash top-ups and wallet moves, then subtract only cash
-  // spending that came from the shared pool. Wallet-funded expenses aren't subtracted
-  // again here (that money already left Available the moment it was moved into the
-  // wallet), and the wallet's effect only applies once — in the month it happened —
-  // instead of being re-subtracted every month after via the live wallet total.
+  // Available = Cash added (which already includes the carry-in) + wallet moves - cash
+  // spent from the shared pool. Wallet-funded expenses aren't subtracted again here
+  // (that money already left Available the moment it was moved into the wallet), and
+  // the wallet's effect only applies once — in the month it happened — instead of being
+  // re-subtracted every month after via the live wallet total.
   const cashSpentThisMonth = Object.values(expensesCache)
     .filter(e => e.month === selectedMonth && !e.fromWallet && e.paymentMode === "Cash")
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const carriedIn = carryForwardForMonth(selectedMonth, "cash");
   const walletTransfers = walletTransferNetForMonth(selectedMonth);
-  const available = carriedIn + cashAdded + walletTransfers - cashSpentThisMonth;
+  const available = cashAdded + walletTransfers - cashSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
