@@ -560,13 +560,18 @@ function renderDashboard() {
   setStatValue("statBank", bankAdded);
   setStatValue("statCash", cashAdded);
 
-  // Available balance = cash added this month - spent this month (all expenses) -
-  // everyone's current wallet total. Using the live wallet total means: money moved
-  // into a wallet is immediately excluded from Available, moving it back out (a
-  // negative wallet amount) adds it back, and a wallet-funded expense doesn't touch
-  // Available a second time — that money already left Available when it entered the wallet.
-  const totalAllWallets = Object.values(walletsCache || {}).reduce((sum, v) => sum + Number(v || 0), 0);
-  const available = cashAdded - spentThisMonth - totalAllWallets;
+  // Available carries forward from month to month: start with whatever carried in from
+  // last month, add this month's cash top-ups and wallet moves, then subtract only cash
+  // spending that came from the shared pool. Wallet-funded expenses aren't subtracted
+  // again here (that money already left Available the moment it was moved into the
+  // wallet), and the wallet's effect only applies once — in the month it happened —
+  // instead of being re-subtracted every month after via the live wallet total.
+  const cashSpentThisMonth = Object.values(expensesCache)
+    .filter(e => e.month === selectedMonth && !e.fromWallet && e.paymentMode === "Cash")
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const carriedIn = carryForwardForMonth(selectedMonth, "cash");
+  const walletTransfers = walletTransferNetForMonth(selectedMonth);
+  const available = carriedIn + cashAdded + walletTransfers - cashSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
@@ -605,14 +610,13 @@ document.getElementById("allExpensesOverlay").addEventListener("click", (e) => {
 let expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
 
 function getFilteredAllExpenses() {
-  return Object.entries(expensesCache).filter(([, e]) => {
-    if (expenseListFilters.year && e.date.slice(0, 4) !== expenseListFilters.year) return false;
-    if (expenseListFilters.month && e.date.slice(5, 7) !== expenseListFilters.month) return false;
-    if (expenseListFilters.dateFrom && e.date < expenseListFilters.dateFrom) return false;
-    if (expenseListFilters.dateTo && e.date > expenseListFilters.dateTo) return false;
-    if (expenseListFilters.categoryId && e.categoryId !== expenseListFilters.categoryId) return false;
-    if (expenseListFilters.paymentMode && e.paymentMode !== expenseListFilters.paymentMode) return false;
-    if (expenseListFilters.paidByUid && e.paidByUid !== expenseListFilters.paidByUid) return false;
+    return Object.entries(expensesCache).filter(([, e]) => {
+    if (year && e.date.slice(0, 4) !== year) return false;
+    if (month && e.date.slice(5, 7) !== month) return false;
+    if (categoryId && e.categoryId !== categoryId) return false;
+    if (paymentMode === "Wallet") { if (!e.fromWallet) return false; }
+    else if (paymentMode) { if (e.fromWallet || e.paymentMode !== paymentMode) return false; }
+    if (paidByUid && e.paidByUid !== paidByUid) return false;
     return true;
   });
 }
