@@ -61,6 +61,9 @@ let charts = {};             // Chart.js instances keyed by canvas id
 let listenersAttached = false;
 let rolloverChecked = false;
 let pruneScheduled = false;
+let expensesLoaded = false;
+let fundLedgerLoaded = false;
+let fundsLoaded = false;
 
 /* =========================================================
    HELPERS
@@ -333,6 +336,7 @@ document.querySelectorAll(".hero-pill").forEach(btn => {
 /* =========================================================
    DATA LISTENERS (realtime)
    ========================================================= */
+
 function attachDataListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
@@ -345,23 +349,23 @@ function attachDataListeners() {
     if (currentView === "analysis") applyFilters();
   });
 
-    db.ref("expenses").on("value", snap => {
+  db.ref("expenses").on("value", snap => {
     expensesCache = snap.val() || {};
+    expensesLoaded = true;
     renderDashboard();
     populateFilterYearOptions();
     if (currentView === "analysis") applyFilters();
     if (currentView === "wallet") renderWalletActivity(currentUser.uid);
     if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
+    maybeRunMonthRollover();
   });
 
   db.ref("funds").on("value", snap => {
     fundsCache = snap.val() || { bank: 0, cash: 0 };
+    fundsLoaded = true;
     renderDashboard();
     renderFundsUI();
-    if (!rolloverChecked) {
-      rolloverChecked = true;
-      checkMonthRollover();
-    }
+    maybeRunMonthRollover();
   });
 
   db.ref("wallets").on("value", snap => {
@@ -371,11 +375,13 @@ function attachDataListeners() {
     renderWalletPage();
   });
 
-   db.ref("fundLedger").on("value", snap => {
+  db.ref("fundLedger").on("value", snap => {
     fundLedgerCache = snap.val() || {};
+    fundLedgerLoaded = true;
     renderDashboard();
     renderFundActivity();
     if (currentView === "wallet") renderWalletActivity(currentUser.uid);
+    maybeRunMonthRollover();
   });
 }
 
@@ -388,11 +394,21 @@ function detachDataListeners() {
   db.ref("fundLedger").off();
   listenersAttached = false;
   rolloverChecked = false;
+  expensesLoaded = false;
+  fundLedgerLoaded = false;
+  fundsLoaded = false;
 }
 
 /* =========================================================
    MONTH-END CARRY FORWARD (automatic, once per real month)
    ========================================================= */
+function maybeRunMonthRollover() {
+  if (rolloverChecked) return;
+  if (!expensesLoaded || !fundLedgerLoaded || !fundsLoaded) return;
+  rolloverChecked = true;
+  checkMonthRollover();
+}
+
 async function checkMonthRollover() {
   const nowMonth = currentMonthStr();
   let previousMonth = null;
