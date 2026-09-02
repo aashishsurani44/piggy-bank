@@ -358,6 +358,7 @@ function attachDataListeners() {
     if (currentView === "wallet") renderWalletActivity(currentUser.uid);
     if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
     maybeRunMonthRollover();
+    if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
   });
 
   db.ref("funds").on("value", snap => {
@@ -382,8 +383,10 @@ function attachDataListeners() {
     renderFundActivity();
     if (currentView === "wallet") renderWalletActivity(currentUser.uid);
     maybeRunMonthRollover();
+    if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
   });
 }
+
 
 function detachDataListeners() {
   if (!listenersAttached) return;
@@ -549,12 +552,81 @@ function walletTransferNetForMonth(yyyymm) {
   return total;
 }
 
+
 function carryForwardForMonth(yyyymm, type) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
     if (r.isCarryForward && r.month === yyyymm && (!type || r.type === type)) total += Number(r.amount);
   });
   return total;
+}
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+let carryForwardSyncing = false;
+
+function syncCarryForwardEntries() {
+  if (carryForwardSyncing) return;
+
+  const targetMonths = Array.from(new Set(
+    Object.values(fundLedgerCache).filter(r => r.isCarryForward).map(r => r.month)
+  )).sort();
+  if (!targetMonths.length) return;
+
+  const corrected = { bank: {}, cash: {} };
+  const carryIn = (type, month) =>
+    Object.prototype.hasOwnProperty.call(corrected[type], month) ? corrected[type][month] : carryForwardForMonth(month, type);
+
+  const updates = {};
+  targetMonths.forEach(targetMonth => {
+    const sourceMonth = shiftMonth(targetMonth, -1);
+
+    const bankSpent = Object.values(expensesCache)
+      .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+    const cashSpent = Object.values(expensesCache)
+      .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Cash")
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
+    const cashLeftover = roundMoney(carryIn("cash", sourceMonth) + fundNetForMonth("cash", sourceMonth) + walletTransferNetForMonth(sourceMonth) - cashSpent);
+    corrected.bank[sourceMonth] = bankLeftover;
+    corrected.cash[sourceMonth] = cashLeftover;
+
+    reconcileCarryForwardEntry(updates, targetMonth, "bank", bankLeftover, sourceMonth);
+    reconcileCarryForwardEntry(updates, targetMonth, "cash", cashLeftover, sourceMonth);
+  });
+
+  if (!Object.keys(updates).length) return;
+
+  carryForwardSyncing = true;
+  db.ref().update(updates)
+    .catch(() => {})
+    .finally(() => { carryForwardSyncing = false; });
+}
+
+function reconcileCarryForwardEntry(updates, targetMonth, type, leftover, sourceMonth) {
+  const existing = Object.entries(fundLedgerCache)
+    .filter(([, r]) => r.isCarryForward && r.month === targetMonth && r.type === type);
+  const current = roundMoney(existing.reduce((s, [, r]) => s + Number(r.amount || 0), 0));
+  if (current === leftover) return;
+
+  const [keepId] = existing[0] || [];
+  existing.slice(1).forEach(([id]) => { updates["fundLedger/" + id] = null; });
+
+  if (leftover === 0) {
+    if (keepId) updates["fundLedger/" + keepId] = null;
+    return;
+  }
+
+  const key = keepId || db.ref("fundLedger").push().key;
+  updates["fundLedger/" + key] = {
+    type, amount: leftover, date: targetMonth + "-01", month: targetMonth,
+    isCarryForward: true, note: "Carried forward from " + monthLabel(sourceMonth),
+    createdBy: currentUser.uid, createdAt: Date.now()
+  };
 }
 
 // DELETE the monthEndDate() and fundBalanceAsOfMonthEnd() functions entirely — no longer used.
@@ -630,13 +702,16 @@ document.getElementById("allExpensesOverlay").addEventListener("click", (e) => {
 let expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
 
 function getFilteredAllExpenses() {
-    return Object.entries(expensesCache).filter(([, e]) => {
+  const { year, month, categoryId, paymentMode, paidByUid, dateFrom, dateTo } = expenseListFilters;
+  return Object.entries(expensesCache).filter(([, e]) => {
     if (year && e.date.slice(0, 4) !== year) return false;
     if (month && e.date.slice(5, 7) !== month) return false;
     if (categoryId && e.categoryId !== categoryId) return false;
     if (paymentMode === "Wallet") { if (!e.fromWallet) return false; }
     else if (paymentMode) { if (e.fromWallet || e.paymentMode !== paymentMode) return false; }
     if (paidByUid && e.paidByUid !== paidByUid) return false;
+    if (dateFrom && e.date < dateFrom) return false;
+    if (dateTo && e.date > dateTo) return false;
     return true;
   });
 }
