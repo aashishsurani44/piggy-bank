@@ -539,7 +539,10 @@ function setStatValue(elId, value) {
 function fundNetForMonth(type, yyyymm) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
-    if (r.type === type && !r.isCarryForward && !r.isWalletTransfer && r.month === yyyymm) total += Number(r.amount);
+    if (r.type === type && !r.isCarryForward && !r.isWalletTransfer && r.month === yyyymm) {
+      const amt = Number(r.amount) || 0;
+      total = amt < 0 ? total - Math.abs(amt) : total + amt;
+    }
   });
   return total;
 }
@@ -547,16 +550,21 @@ function fundNetForMonth(type, yyyymm) {
 function walletTransferNetForMonth(yyyymm) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
-    if (r.isWalletTransfer && r.month === yyyymm) total += Number(r.amount);
+    if (r.isWalletTransfer && r.month === yyyymm) {
+      const amt = Number(r.amount) || 0;
+      total = amt < 0 ? total - Math.abs(amt) : total + amt;
+    }
   });
   return total;
 }
 
-
 function carryForwardForMonth(yyyymm, type) {
   let total = 0;
   Object.values(fundLedgerCache).forEach(r => {
-    if (r.isCarryForward && r.month === yyyymm && (!type || r.type === type)) total += Number(r.amount);
+    if (r.isCarryForward && r.month === yyyymm && (!type || r.type === type)) {
+      const amt = Number(r.amount) || 0;
+      total = amt < 0 ? total - Math.abs(amt) : total + amt;
+    }
   });
   return total;
 }
@@ -610,7 +618,7 @@ function syncCarryForwardEntries() {
 function reconcileCarryForwardEntry(updates, targetMonth, type, leftover, sourceMonth) {
   const existing = Object.entries(fundLedgerCache)
     .filter(([, r]) => r.isCarryForward && r.month === targetMonth && r.type === type);
-  const current = roundMoney(existing.reduce((s, [, r]) => s + Number(r.amount || 0), 0));
+  const current = roundMoney(existing.reduce((s, [, r]) => s + (Number(r.amount) || 0), 0));
   if (current === leftover) return;
 
   const [keepId] = existing[0] || [];
