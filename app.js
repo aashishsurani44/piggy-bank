@@ -59,12 +59,9 @@ let selectedMonth = todayStr().slice(0, 7); // "YYYY-MM"
 let currentView = "dashboard";
 let charts = {};             // Chart.js instances keyed by canvas id
 let listenersAttached = false;
-let rolloverChecked = false;
 let pruneScheduled = false;
 let expensesLoaded = false;
 let fundLedgerLoaded = false;
-let fundsLoaded = false;
-
 /* =========================================================
    HELPERS
    ========================================================= */
@@ -361,12 +358,21 @@ function attachDataListeners() {
     if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
   });
 
+      db.ref("expenses").on("value", snap => {
+    expensesCache = snap.val() || {};
+    expensesLoaded = true;
+    renderDashboard();
+    populateFilterYearOptions();
+    if (currentView === "analysis") applyFilters();
+    if (currentView === "wallet") renderWalletActivity(currentUser.uid);
+    if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
+    if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
+  });
+
   db.ref("funds").on("value", snap => {
     fundsCache = snap.val() || { bank: 0, cash: 0 };
-    fundsLoaded = true;
     renderDashboard();
     renderFundsUI();
-    maybeRunMonthRollover();
   });
 
   db.ref("wallets").on("value", snap => {
@@ -376,17 +382,15 @@ function attachDataListeners() {
     renderWalletPage();
   });
 
-  db.ref("fundLedger").on("value", snap => {
+   db.ref("fundLedger").on("value", snap => {
     fundLedgerCache = snap.val() || {};
     fundLedgerLoaded = true;
     renderDashboard();
     renderFundActivity();
     if (currentView === "wallet") renderWalletActivity(currentUser.uid);
-    maybeRunMonthRollover();
     if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
   });
 }
-
 
 function detachDataListeners() {
   if (!listenersAttached) return;
@@ -396,68 +400,15 @@ function detachDataListeners() {
   db.ref("wallets").off();
   db.ref("fundLedger").off();
   listenersAttached = false;
-  rolloverChecked = false;
   expensesLoaded = false;
   fundLedgerLoaded = false;
-  fundsLoaded = false;
 }
 
 /* =========================================================
-   MONTH-END CARRY FORWARD (automatic, once per real month)
+   MONTH-END CARRY FORWARD (automatic, data-driven)
    ========================================================= */
-function maybeRunMonthRollover() {
-  if (rolloverChecked) return;
-  if (!expensesLoaded || !fundLedgerLoaded || !fundsLoaded) return;
-  rolloverChecked = true;
-  checkMonthRollover();
-}
 
-async function checkMonthRollover() {
-  const nowMonth = currentMonthStr();
-  let previousMonth = null;
-  try {
-    const result = await db.ref("systemState/lastFundMonth").transaction(current => {
-      previousMonth = current;
-      if (current === null) return nowMonth;
-      if (current >= nowMonth) return; // already up to date — abort
-      return nowMonth;
-    });
 
-    if (result.committed && previousMonth && previousMonth < nowMonth) {
-      const label = monthLabel(previousMonth);
-
-      const bankSpentPrev = Object.values(expensesCache)
-        .filter(e => e.month === previousMonth && !e.fromWallet && e.paymentMode === "Bank")
-        .reduce((s, e) => s + Number(e.amount || 0), 0);
-      const cashSpentPrev = Object.values(expensesCache)
-        .filter(e => e.month === previousMonth && !e.fromWallet && e.paymentMode === "Cash")
-        .reduce((s, e) => s + Number(e.amount || 0), 0);
-
-      // Leftover = whatever carried INTO that month + that month's own top-ups - that month's spend.
-      const bankLeftover = carryForwardForMonth(previousMonth, "bank") + fundNetForMonth("bank", previousMonth) - bankSpentPrev;
-      const cashLeftover = carryForwardForMonth(previousMonth, "cash") + fundNetForMonth("cash", previousMonth) + walletTransferNetForMonth(previousMonth) - cashSpentPrev;
-
-      const updates = {};
-      if (bankLeftover !== 0) {
-        const k = db.ref("fundLedger").push().key;
-        updates["fundLedger/" + k] = {
-          type: "bank", amount: bankLeftover, date: nowMonth + "-01", month: nowMonth,
-          isCarryForward: true, note: "Carried forward from " + label,
-          createdBy: currentUser.uid, createdAt: Date.now()
-        };
-      }
-      if (cashLeftover !== 0) {
-        const k = db.ref("fundLedger").push().key;
-        updates["fundLedger/" + k] = {
-          type: "cash", amount: cashLeftover, date: nowMonth + "-01", month: nowMonth,
-          isCarryForward: true, note: "Carried forward from " + label,
-          createdBy: currentUser.uid, createdAt: Date.now()
-        };
-      }
-      if (Object.keys(updates).length) await db.ref().update(updates);
-    }
-  } catch (err) { /* non-critical background task */ }
-}
 
 /* =========================================================
    1-YEAR DATA RETENTION (prune older records client-side)
@@ -578,9 +529,22 @@ let carryForwardSyncing = false;
 function syncCarryForwardEntries() {
   if (carryForwardSyncing) return;
 
-  const targetMonths = Array.from(new Set(
-    Object.values(fundLedgerCache).filter(r => r.isCarryForward).map(r => r.month)
-  )).sort();
+  const months = new Set();
+  Object.values(expensesCache).forEach(e => { if (e.month) months.add(e.month); });
+  Object.values(fundLedgerCache).forEach(r => {
+    if (!r.month) return;
+    if (!r.isCarryForward) months.add(r.month);
+    else months.add(shiftMonth(r.month, -1)); // the month that carry-forward came FROM
+  });
+  months.add(currentMonthStr());
+  if (!months.size) return;
+
+  const sorted = Array.from(months).sort();
+  const earliest = sorted[0];
+  const latest = sorted[sorted.length - 1];
+
+  const targetMonths = [];
+  for (let m = shiftMonth(earliest, 1); m <= latest; m = shiftMonth(m, 1)) targetMonths.push(m);
   if (!targetMonths.length) return;
 
   const corrected = { bank: {}, cash: {} };
