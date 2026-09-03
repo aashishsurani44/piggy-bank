@@ -641,34 +641,6 @@ function renderDashboard() {
     const available = cashAdded + walletTransfers - cashSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
-  // DIAGNOSTIC — open the browser console (F12) and switch to August to see
-  // exactly what's feeding into "Available". Remove this block once resolved.
-  console.group("Available breakdown — " + selectedMonth);
-  console.log("Carried in from last month (cash):", carriedIn);
-  console.log("Fresh cash added this month:", freshCashAdded);
-  console.log("Wallet transfers (net) this month:", walletTransfers);
-  console.log("Cash spent this month:", cashSpentThisMonth);
-  console.log("=> Available:", available);
-  console.table(
-    Object.entries(fundLedgerCache)
-      .filter(([, r]) => r.type === "cash" && r.month === selectedMonth)
-      .map(([id, r]) => ({
-        id,
-        amount: r.amount,
-        isCarryForward: !!r.isCarryForward,
-        isWalletTransfer: !!r.isWalletTransfer,
-        note: r.note || "",
-        date: r.date
-      }))
-  );
-  console.log(
-    "Cash expenses counted this month:",
-    Object.entries(expensesCache)
-      .filter(([, e]) => e.month === selectedMonth && (e.fromWallet || e.paymentMode === "Cash"))
-      .map(([id, e]) => ({ id, amount: e.amount, date: e.date }))
-  );
-  console.groupEnd();
-
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
 
