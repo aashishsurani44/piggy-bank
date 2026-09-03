@@ -408,7 +408,9 @@ function detachDataListeners() {
    MONTH-END CARRY FORWARD (automatic, data-driven)
    ========================================================= */
 
-
+  function maybeRunMonthRollover() {
+  if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
+}
 
 /* =========================================================
    1-YEAR DATA RETENTION (prune older records client-side)
@@ -1332,7 +1334,8 @@ function renderCategoryManageList() {
    ADMIN — funds (dated top-ups, logged to fundLedger)
    ========================================================= */
 function renderFundsUI() {
-  document.getElementById("adminBankBalance").textContent = formatCurrency(fundsCache.bank || 0);
+  const el = document.getElementById("adminBankBalance");
+  if (el) el.textContent = formatCurrency(fundsCache.bank || 0);
 }
 
 document.getElementById("updateBankBtn").addEventListener("click", () => adjustFund("bank", "bankAdjustInput", "bankAdjustDate"));
