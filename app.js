@@ -637,9 +637,25 @@ function renderRecentExpenses() {
   });
 }
 
-document.getElementById("viewAllExpensesBtn").addEventListener("click", () => {
+let allListMode = "expenses"; // "expenses" | "wallet" | "fund"
+let walletActivityListFilters = { categoryId: "", paymentMode: "", paidByUid: "", year: "", month: "", dateFrom: "", dateTo: "" };
+let fundActivityListFilters = { categoryId: "", paymentMode: "", paidByUid: "", year: "", month: "", dateFrom: "", dateTo: "" };
+
+function currentListFilters() {
+  if (allListMode === "wallet") return walletActivityListFilters;
+  if (allListMode === "fund") return fundActivityListFilters;
+  return expenseListFilters;
+}
+
+function openAllListOverlay(mode) {
+  allListMode = mode;
   renderAllExpensesList();
+  updateFilterTriggerLabel();
   document.getElementById("allExpensesOverlay").classList.remove("hidden");
+}
+
+document.getElementById("viewAllExpensesBtn").addEventListener("click", () => {
+  openAllListOverlay("expenses");
 });
 document.getElementById("closeAllExpensesBtn").addEventListener("click", () => {
   document.getElementById("allExpensesOverlay").classList.add("hidden");
@@ -665,11 +681,61 @@ function getFilteredAllExpenses() {
   });
 }
 
+function getFilteredWalletActivity(uid) {
+  const { categoryId, year, month, dateFrom, dateTo } = walletActivityListFilters;
+  return getWalletActivityRows(uid).filter(r => {
+    if (categoryId && r.categoryId !== categoryId) return false;
+    if (year && r.date.slice(0, 4) !== year) return false;
+    if (month && r.date.slice(5, 7) !== month) return false;
+    if (dateFrom && r.date < dateFrom) return false;
+    if (dateTo && r.date > dateTo) return false;
+    return true;
+  });
+}
+
+function getFilteredFundActivity() {
+  const { year, month, dateFrom, dateTo } = fundActivityListFilters;
+  return Object.entries(fundLedgerCache)
+    .filter(([, r]) => {
+      if (year && r.date.slice(0, 4) !== year) return false;
+      if (month && r.date.slice(5, 7) !== month) return false;
+      if (dateFrom && r.date < dateFrom) return false;
+      if (dateTo && r.date > dateTo) return false;
+      return true;
+    })
+    .sort((a, b) => (b[1].date + b[1].createdAt).localeCompare(a[1].date + a[1].createdAt));
+}
+
 function renderAllExpensesList() {
+  const container = document.getElementById("allExpensesList");
+
+  if (allListMode === "wallet") {
+    const all = getFilteredWalletActivity(currentUser.uid);
+    if (all.length === 0) {
+      container.innerHTML = `<p class="empty-hint">No wallet activity matches these filters.</p>`;
+      return;
+    }
+    container.innerHTML = all.map(walletActivityRowHtml).join("");
+    container.querySelectorAll(".expense-row[data-id]").forEach(row => {
+      row.addEventListener("click", () => {
+        document.getElementById("allExpensesOverlay").classList.add("hidden");
+        openExpenseForm("edit", row.dataset.id);
+      });
+    });
+    return;
+  }
+
+  if (allListMode === "fund") {
+    const all = getFilteredFundActivity();
+    container.innerHTML = all.length
+      ? all.map(([id, r]) => fundActivityRowHtml(r)).join("")
+      : `<p class="empty-hint">No fund activity matches these filters.</p>`;
+    return;
+  }
+
   const all = getFilteredAllExpenses()
     .sort((a, b) => (b[1].date + (b[1].createdAt || 0)).localeCompare(a[1].date + (a[1].createdAt || 0)));
 
-  const container = document.getElementById("allExpensesList");
   if (all.length === 0) {
     container.innerHTML = `<p class="empty-hint">No expenses match these filters.</p>`;
     return;
@@ -691,47 +757,64 @@ function chipRowHtml(groupKey, options, activeValue) {
 }
 
 function renderExpenseFilterSheet() {
-  document.getElementById("filterDateFrom").value = expenseListFilters.dateFrom;
-  document.getElementById("filterDateTo").value = expenseListFilters.dateTo;
+  const filters = currentListFilters();
+  document.getElementById("filterDateFrom").value = filters.dateFrom;
+  document.getElementById("filterDateTo").value = filters.dateTo;
 
-  const years = new Set(Object.values(expensesCache).map(e => e.date.slice(0, 4)));
+  const sourceDates =
+    allListMode === "wallet" ? getWalletActivityRows(currentUser.uid).map(r => r.date) :
+    allListMode === "fund" ? Object.values(fundLedgerCache).map(r => r.date) :
+    Object.values(expensesCache).map(e => e.date);
+
+  const years = new Set(sourceDates.filter(Boolean).map(d => d.slice(0, 4)));
   years.add(String(new Date().getFullYear()));
   const sortedYears = Array.from(years).sort((a, b) => b.localeCompare(a));
   document.getElementById("chipYear").innerHTML = chipRowHtml("year",
-    [{ value: "", label: "All" }, ...sortedYears.map(y => ({ value: y, label: y }))], expenseListFilters.year);
+    [{ value: "", label: "All" }, ...sortedYears.map(y => ({ value: y, label: y }))], filters.year);
 
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   document.getElementById("chipMonth").innerHTML = chipRowHtml("month",
     [{ value: "", label: "All" }, ...MONTH_NAMES.map((m, i) => ({ value: String(i + 1).padStart(2, "0"), label: m }))],
-    expenseListFilters.month);
+    filters.month);
 
-  const catIds = Object.keys(categoriesCache).sort((a, b) => (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
-  document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId",
-    [{ value: "", label: "All" }, ...catIds.map(id => ({ value: id, label: categoriesCache[id].name }))],
-    expenseListFilters.categoryId);
+  if (allListMode === "expenses" || allListMode === "wallet") {
+    const catIds = Object.keys(categoriesCache).sort((a, b) => (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
+    document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId",
+      [{ value: "", label: "All" }, ...catIds.map(id => ({ value: id, label: categoriesCache[id].name }))],
+      filters.categoryId);
+  } else {
+    document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId", [{ value: "", label: "All" }], "");
+  }
 
-  document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode",
-    [{ value: "", label: "All" }, { value: "Cash", label: "Cash" }, { value: "Bank", label: "Bank" }],
-    expenseListFilters.paymentMode);
-
-  const uids = sortedUserIds();
-  document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid",
-    [{ value: "", label: "All" }, ...uids.map(uid => ({ value: uid, label: usersDirectory[uid].name }))],
-    expenseListFilters.paidByUid);
+  if (allListMode === "expenses") {
+    document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode",
+      [{ value: "", label: "All" }, { value: "Cash", label: "Cash" }, { value: "Bank", label: "Bank" }],
+      filters.paymentMode);
+    const uids = sortedUserIds();
+    document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid",
+      [{ value: "", label: "All" }, ...uids.map(uid => ({ value: uid, label: usersDirectory[uid].name }))],
+      filters.paidByUid);
+  } else {
+    document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode", [{ value: "", label: "All" }], "");
+    document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid", [{ value: "", label: "All" }], "");
+  }
 
   document.querySelectorAll("#expenseFilterOverlay .chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      expenseListFilters[chip.dataset.group] = chip.dataset.value;
+      currentListFilters()[chip.dataset.group] = chip.dataset.value;
       renderExpenseFilterSheet();
     });
   });
 
-  const count = getFilteredAllExpenses().length;
+  const count =
+    allListMode === "wallet" ? getFilteredWalletActivity(currentUser.uid).length :
+    allListMode === "fund" ? getFilteredFundActivity().length :
+    getFilteredAllExpenses().length;
   document.getElementById("applyExpenseFilterBtn").textContent = `Show ${count} result${count === 1 ? "" : "s"}`;
 }
 
 function updateFilterTriggerLabel() {
-  const count = Object.values(expenseListFilters).filter(v => v).length;
+  const count = Object.values(currentListFilters()).filter(v => v).length;
   document.getElementById("openExpenseFilterBtn").textContent = count ? `Filter (${count})` : "Filter";
 }
 
@@ -746,15 +829,18 @@ document.getElementById("expenseFilterOverlay").addEventListener("click", (e) =>
   if (e.target.id === "expenseFilterOverlay") document.getElementById("expenseFilterOverlay").classList.add("hidden");
 });
 document.getElementById("filterDateFrom").addEventListener("change", () => {
-  expenseListFilters.dateFrom = document.getElementById("filterDateFrom").value;
+  currentListFilters().dateFrom = document.getElementById("filterDateFrom").value;
   renderExpenseFilterSheet();
 });
 document.getElementById("filterDateTo").addEventListener("change", () => {
-  expenseListFilters.dateTo = document.getElementById("filterDateTo").value;
+  currentListFilters().dateTo = document.getElementById("filterDateTo").value;
   renderExpenseFilterSheet();
 });
 document.getElementById("clearExpenseFilterBtn").addEventListener("click", () => {
-  expenseListFilters = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
+  const empty = { year: "", month: "", categoryId: "", paymentMode: "", paidByUid: "", dateFrom: "", dateTo: "" };
+  if (allListMode === "wallet") walletActivityListFilters = empty;
+  else if (allListMode === "fund") fundActivityListFilters = { ...empty };
+  else expenseListFilters = empty;
   renderExpenseFilterSheet();
 });
 document.getElementById("applyExpenseFilterBtn").addEventListener("click", () => {
@@ -1179,8 +1265,6 @@ function renderWalletPage() {
     : `<p class="empty-hint">No users found in /users yet.</p>`;
 }
 
-let walletActivityExpanded = false;
-let walletActivityFilters = { type: "", dateFrom: "", dateTo: "" };
 const WALLET_ACTIVITY_PREVIEW_COUNT = 10;
 
 function getWalletActivityRows(uid) {
@@ -1235,60 +1319,14 @@ function renderWalletActivity(uid) {
     return;
   }
 
-  if (!walletActivityExpanded) {
-    const recent = all.slice(0, WALLET_ACTIVITY_PREVIEW_COUNT);
-    const toggleHtml = all.length > WALLET_ACTIVITY_PREVIEW_COUNT
-      ? `<button type="button" class="view-all-btn" id="toggleWalletActivityBtn">View all wallet activity (${all.length})</button>`
-      : "";
-    el.innerHTML = recent.map(walletActivityRowHtml).join("") + toggleHtml;
-  } else {
-    const { type, dateFrom, dateTo } = walletActivityFilters;
-    const filtered = all.filter(r => {
-      if (type && r.type !== type) return false;
-      if (dateFrom && r.date < dateFrom) return false;
-      if (dateTo && r.date > dateTo) return false;
-      return true;
-    });
+  const recent = all.slice(0, WALLET_ACTIVITY_PREVIEW_COUNT);
+  const toggleHtml = all.length > WALLET_ACTIVITY_PREVIEW_COUNT
+    ? `<button type="button" class="view-all-btn" id="viewAllWalletActivityBtn">View all wallet activity (${all.length})</button>`
+    : "";
+  el.innerHTML = recent.map(walletActivityRowHtml).join("") + toggleHtml;
 
-    const filterBarHtml = `
-      <div class="wallet-activity-filters">
-        <select id="walletActivityTypeFilter">
-          <option value="">All activity</option>
-          <option value="transfer" ${type === "transfer" ? "selected" : ""}>Wallet top-ups</option>
-          <option value="expense" ${type === "expense" ? "selected" : ""}>Wallet expenses</option>
-        </select>
-        <input type="date" id="walletActivityFromFilter" value="${dateFrom}" />
-        <input type="date" id="walletActivityToFilter" value="${dateTo}" />
-        <button type="button" class="view-all-btn" id="toggleWalletActivityBtn">Show recent only</button>
-      </div>`;
-
-    const listHtml = filtered.length
-      ? filtered.map(walletActivityRowHtml).join("")
-      : `<p class="empty-hint">No wallet activity matches these filters.</p>`;
-
-    el.innerHTML = filterBarHtml + listHtml;
-
-    document.getElementById("walletActivityTypeFilter").addEventListener("change", e => {
-      walletActivityFilters.type = e.target.value;
-      renderWalletActivity(uid);
-    });
-    document.getElementById("walletActivityFromFilter").addEventListener("change", e => {
-      walletActivityFilters.dateFrom = e.target.value;
-      renderWalletActivity(uid);
-    });
-    document.getElementById("walletActivityToFilter").addEventListener("change", e => {
-      walletActivityFilters.dateTo = e.target.value;
-      renderWalletActivity(uid);
-    });
-  }
-
-  const toggleBtn = document.getElementById("toggleWalletActivityBtn");
-  if (toggleBtn) {
-    toggleBtn.addEventListener("click", () => {
-      walletActivityExpanded = !walletActivityExpanded;
-      renderWalletActivity(uid);
-    });
-  }
+  const viewAllBtn = document.getElementById("viewAllWalletActivityBtn");
+  if (viewAllBtn) viewAllBtn.addEventListener("click", () => openAllListOverlay("wallet"));
 
   el.querySelectorAll(".expense-row[data-id]").forEach(row => {
     row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
@@ -1398,8 +1436,21 @@ async function adjustFund(path, inputId, dateInputId) {
   }
 }
 
-let fundActivityExpanded = false;
 const FUND_ACTIVITY_PREVIEW_COUNT = 5;
+
+function fundActivityRowHtml(r) {
+  const label = r.note || `${r.type === "bank" ? "Bank" : "Cash"} ${Number(r.amount) >= 0 ? "top-up" : "correction"}`;
+  const positive = Number(r.amount) >= 0;
+  return `
+    <div class="expense-row fund-row-static">
+      ${categoryBadgeHtml(r.type, r.type === "bank" ? "Bank" : "Cash", false)}
+      <span class="expense-info">
+        <span class="expense-desc">${escapeHtml(label)}</span>
+        <span class="expense-meta">${r.type === "bank" ? "Bank" : "Cash"} · ${formatDate(r.date)}</span>
+      </span>
+      <span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>
+    </div>`;
+}
 
 function renderFundActivity() {
   const el = document.getElementById("fundActivityList");
@@ -1413,35 +1464,17 @@ function renderFundActivity() {
     return;
   }
 
-  const rows = fundActivityExpanded ? sorted : sorted.slice(0, FUND_ACTIVITY_PREVIEW_COUNT);
-
-  const rowsHtml = rows.map(([id, r]) => {
-    const label = r.note || `${r.type === "bank" ? "Bank" : "Cash"} ${Number(r.amount) >= 0 ? "top-up" : "correction"}`;
-    const positive = Number(r.amount) >= 0;
-    return `
-      <div class="expense-row fund-row-static">
-        ${categoryBadgeHtml(r.type, r.type === "bank" ? "Bank" : "Cash", false)}
-        <span class="expense-info">
-          <span class="expense-desc">${escapeHtml(label)}</span>
-          <span class="expense-meta">${r.type === "bank" ? "Bank" : "Cash"} · ${formatDate(r.date)}</span>
-        </span>
-        <span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>
-      </div>`;
-  }).join("");
+  const recent = sorted.slice(0, FUND_ACTIVITY_PREVIEW_COUNT);
+  const rowsHtml = recent.map(([id, r]) => fundActivityRowHtml(r)).join("");
 
   const toggleHtml = sorted.length > FUND_ACTIVITY_PREVIEW_COUNT
-    ? `<button type="button" class="view-all-btn" id="toggleFundActivityBtn">${fundActivityExpanded ? "Show recent only" : `View all fund activity (${sorted.length})`}</button>`
+    ? `<button type="button" class="view-all-btn" id="viewAllFundActivityBtn">View all fund activity (${sorted.length})</button>`
     : "";
 
   el.innerHTML = rowsHtml + toggleHtml;
 
-  const toggleBtn = document.getElementById("toggleFundActivityBtn");
-  if (toggleBtn) {
-    toggleBtn.addEventListener("click", () => {
-      fundActivityExpanded = !fundActivityExpanded;
-      renderFundActivity();
-    });
-  }
+  const viewAllBtn = document.getElementById("viewAllFundActivityBtn");
+  if (viewAllBtn) viewAllBtn.addEventListener("click", () => openAllListOverlay("fund"));
 }
 
 /* =========================================================
