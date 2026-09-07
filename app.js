@@ -756,6 +756,14 @@ function chipRowHtml(groupKey, options, activeValue) {
   `).join("");
 }
 
+// --- with ---
+function setFilterGroupVisible(chipContainerId, visible) {
+  const chipEl = document.getElementById(chipContainerId);
+  if (!chipEl) return;
+  const group = chipEl.closest(".filter-group") || chipEl.parentElement;
+  if (group) group.style.display = visible ? "" : "none";
+}
+
 function renderExpenseFilterSheet() {
   const filters = currentListFilters();
   document.getElementById("filterDateFrom").value = filters.dateFrom;
@@ -777,15 +785,18 @@ function renderExpenseFilterSheet() {
     [{ value: "", label: "All" }, ...MONTH_NAMES.map((m, i) => ({ value: String(i + 1).padStart(2, "0"), label: m }))],
     filters.month);
 
+  // Category: shown for expenses + wallet, hidden for fund
+  setFilterGroupVisible("chipCategory", allListMode !== "fund");
   if (allListMode === "expenses" || allListMode === "wallet") {
     const catIds = Object.keys(categoriesCache).sort((a, b) => (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
     document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId",
       [{ value: "", label: "All" }, ...catIds.map(id => ({ value: id, label: categoriesCache[id].name }))],
       filters.categoryId);
-  } else {
-    document.getElementById("chipCategory").innerHTML = chipRowHtml("categoryId", [{ value: "", label: "All" }], "");
   }
 
+  // Payment mode + paid by: only meaningful for expenses, hidden for wallet and fund
+  setFilterGroupVisible("chipPaymentMode", allListMode === "expenses");
+  setFilterGroupVisible("chipPaidBy", allListMode === "expenses");
   if (allListMode === "expenses") {
     document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode",
       [{ value: "", label: "All" }, { value: "Cash", label: "Cash" }, { value: "Bank", label: "Bank" }],
@@ -794,9 +805,6 @@ function renderExpenseFilterSheet() {
     document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid",
       [{ value: "", label: "All" }, ...uids.map(uid => ({ value: uid, label: usersDirectory[uid].name }))],
       filters.paidByUid);
-  } else {
-    document.getElementById("chipPaymentMode").innerHTML = chipRowHtml("paymentMode", [{ value: "", label: "All" }], "");
-    document.getElementById("chipPaidBy").innerHTML = chipRowHtml("paidByUid", [{ value: "", label: "All" }], "");
   }
 
   document.querySelectorAll("#expenseFilterOverlay .chip").forEach(chip => {
@@ -1319,19 +1327,16 @@ function renderWalletActivity(uid) {
     return;
   }
 
-  const recent = all.slice(0, WALLET_ACTIVITY_PREVIEW_COUNT);
-  const toggleHtml = all.length > WALLET_ACTIVITY_PREVIEW_COUNT
-    ? `<button type="button" class="view-all-btn" id="viewAllWalletActivityBtn">View all wallet activity (${all.length})</button>`
-    : "";
-  el.innerHTML = recent.map(walletActivityRowHtml).join("") + toggleHtml;
-
-  const viewAllBtn = document.getElementById("viewAllWalletActivityBtn");
-  if (viewAllBtn) viewAllBtn.addEventListener("click", () => openAllListOverlay("wallet"));
+  el.innerHTML = all.slice(0, WALLET_ACTIVITY_PREVIEW_COUNT).map(walletActivityRowHtml).join("");
 
   el.querySelectorAll(".expense-row[data-id]").forEach(row => {
     row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
   });
 }
+
+document.getElementById("viewAllWalletActivityBtn").addEventListener("click", () => {
+  openAllListOverlay("wallet");
+});
 
 /* =========================================================
    ADMIN — categories
@@ -1459,23 +1464,14 @@ function renderFundActivity() {
   const sorted = Object.entries(fundLedgerCache)
     .sort((a, b) => (b[1].date + b[1].createdAt).localeCompare(a[1].date + a[1].createdAt));
 
-  if (sorted.length === 0) {
-    el.innerHTML = `<p class="empty-hint">No fund activity yet.</p>`;
-    return;
-  }
-
-  const recent = sorted.slice(0, FUND_ACTIVITY_PREVIEW_COUNT);
-  const rowsHtml = recent.map(([id, r]) => fundActivityRowHtml(r)).join("");
-
-  const toggleHtml = sorted.length > FUND_ACTIVITY_PREVIEW_COUNT
-    ? `<button type="button" class="view-all-btn" id="viewAllFundActivityBtn">View all fund activity (${sorted.length})</button>`
-    : "";
-
-  el.innerHTML = rowsHtml + toggleHtml;
-
-  const viewAllBtn = document.getElementById("viewAllFundActivityBtn");
-  if (viewAllBtn) viewAllBtn.addEventListener("click", () => openAllListOverlay("fund"));
+  el.innerHTML = sorted.length
+    ? sorted.slice(0, FUND_ACTIVITY_PREVIEW_COUNT).map(([id, r]) => fundActivityRowHtml(r)).join("")
+    : `<p class="empty-hint">No fund activity yet.</p>`;
 }
+
+document.getElementById("viewAllFundActivityBtn").addEventListener("click", () => {
+  openAllListOverlay("fund");
+});
 
 /* =========================================================
    ADMIN — wallets (admin can adjust anyone's, also moves cash)
