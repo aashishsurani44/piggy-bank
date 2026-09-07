@@ -19,7 +19,7 @@ const firebaseConfig = {
 
 
 const CURRENCY = "₹";
-const DATA_RETENTION_DAYS = 366; // ~1 year; expenses & fund ledger entries older than this are pruned
+// add this code to keep limited data in database(const DATA_RETENTION_DAYS = 366;)
 
 // Stable palette used to color categories consistently across charts & badges.
 const CHART_COLORS = [
@@ -59,7 +59,6 @@ let selectedMonth = todayStr().slice(0, 7); // "YYYY-MM"
 let currentView = "dashboard";
 let charts = {};             // Chart.js instances keyed by canvas id
 let listenersAttached = false;
-let pruneScheduled = false;
 let expensesLoaded = false;
 let fundLedgerLoaded = false;
 /* =========================================================
@@ -301,7 +300,6 @@ function enterApp() {
   switchView("dashboard");
   attachDataListeners();
   loadMonthNotes();
-  setTimeout(pruneOldData, 2500);
 }
 
 /* =========================================================
@@ -410,30 +408,6 @@ function detachDataListeners() {
 
   function maybeRunMonthRollover() {
   if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
-}
-
-/* =========================================================
-   1-YEAR DATA RETENTION (prune older records client-side)
-   ========================================================= */
-function pruneOldData() {
-  if (pruneScheduled) return;
-  pruneScheduled = true;
-
-  const cutoff = new Date(todayStr() + "T00:00:00");
-  cutoff.setDate(cutoff.getDate() - DATA_RETENTION_DAYS);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-  const updates = {};
-  Object.entries(expensesCache).forEach(([id, e]) => {
-    if (e.date && e.date < cutoffStr) updates["expenses/" + id] = null;
-  });
-  Object.entries(fundLedgerCache).forEach(([id, r]) => {
-    if (r.date && r.date < cutoffStr) updates["fundLedger/" + id] = null;
-  });
-
-  if (Object.keys(updates).length) {
-    db.ref().update(updates).catch(() => {});
-  }
 }
 
 /* =========================================================
@@ -1205,10 +1179,11 @@ function renderWalletPage() {
     : `<p class="empty-hint">No users found in /users yet.</p>`;
 }
 
-function renderWalletActivity(uid) {
-  const el = document.getElementById("walletActivityList");
-  if (!el) return;
+let walletActivityExpanded = false;
+let walletActivityFilters = { type: "", dateFrom: "", dateTo: "" };
+const WALLET_ACTIVITY_PREVIEW_COUNT = 10;
 
+function getWalletActivityRows(uid) {
   const rows = [];
   Object.entries(fundLedgerCache).forEach(([id, r]) => {
     if (r.isWalletTransfer && r.walletUid === uid) {
@@ -1221,36 +1196,99 @@ function renderWalletActivity(uid) {
     }
   });
   rows.sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt));
+  return rows;
+}
 
-  if (rows.length === 0) {
-    el.innerHTML = `<p class="empty-hint">No wallet activity yet.</p>`;
-    return;
-  }
-
-  el.innerHTML = rows.map(r => {
-    const positive = r.amount >= 0;
-    const amountHtml = `<span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>`;
-    if (r.type === "expense") {
-      return `
-        <button type="button" class="expense-row" data-id="${r.id}">
-          ${categoryBadgeHtml(r.categoryId, r.categoryName)}
-          <span class="expense-info">
-            <span class="expense-desc">${escapeHtml(r.note)}</span>
-            <span class="expense-meta">${formatDate(r.date)}</span>
-          </span>
-          ${amountHtml}
-        </button>`;
-    }
+function walletActivityRowHtml(r) {
+  const positive = r.amount >= 0;
+  const amountHtml = `<span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>`;
+  if (r.type === "expense") {
     return `
-      <div class="expense-row fund-row-static">
-        ${categoryBadgeHtml("wallet", "Wallet")}
+      <button type="button" class="expense-row" data-id="${r.id}">
+        ${categoryBadgeHtml(r.categoryId, r.categoryName)}
         <span class="expense-info">
           <span class="expense-desc">${escapeHtml(r.note)}</span>
           <span class="expense-meta">${formatDate(r.date)}</span>
         </span>
         ${amountHtml}
+      </button>`;
+  }
+  return `
+    <div class="expense-row fund-row-static">
+      ${categoryBadgeHtml("wallet", "Wallet")}
+      <span class="expense-info">
+        <span class="expense-desc">${escapeHtml(r.note)}</span>
+        <span class="expense-meta">${formatDate(r.date)}</span>
+      </span>
+      ${amountHtml}
+    </div>`;
+}
+
+function renderWalletActivity(uid) {
+  const el = document.getElementById("walletActivityList");
+  if (!el) return;
+
+  const all = getWalletActivityRows(uid);
+
+  if (all.length === 0) {
+    el.innerHTML = `<p class="empty-hint">No wallet activity yet.</p>`;
+    return;
+  }
+
+  if (!walletActivityExpanded) {
+    const recent = all.slice(0, WALLET_ACTIVITY_PREVIEW_COUNT);
+    const toggleHtml = all.length > WALLET_ACTIVITY_PREVIEW_COUNT
+      ? `<button type="button" class="view-all-btn" id="toggleWalletActivityBtn">View all wallet activity (${all.length})</button>`
+      : "";
+    el.innerHTML = recent.map(walletActivityRowHtml).join("") + toggleHtml;
+  } else {
+    const { type, dateFrom, dateTo } = walletActivityFilters;
+    const filtered = all.filter(r => {
+      if (type && r.type !== type) return false;
+      if (dateFrom && r.date < dateFrom) return false;
+      if (dateTo && r.date > dateTo) return false;
+      return true;
+    });
+
+    const filterBarHtml = `
+      <div class="wallet-activity-filters">
+        <select id="walletActivityTypeFilter">
+          <option value="">All activity</option>
+          <option value="transfer" ${type === "transfer" ? "selected" : ""}>Wallet top-ups</option>
+          <option value="expense" ${type === "expense" ? "selected" : ""}>Wallet expenses</option>
+        </select>
+        <input type="date" id="walletActivityFromFilter" value="${dateFrom}" />
+        <input type="date" id="walletActivityToFilter" value="${dateTo}" />
+        <button type="button" class="view-all-btn" id="toggleWalletActivityBtn">Show recent only</button>
       </div>`;
-  }).join("");
+
+    const listHtml = filtered.length
+      ? filtered.map(walletActivityRowHtml).join("")
+      : `<p class="empty-hint">No wallet activity matches these filters.</p>`;
+
+    el.innerHTML = filterBarHtml + listHtml;
+
+    document.getElementById("walletActivityTypeFilter").addEventListener("change", e => {
+      walletActivityFilters.type = e.target.value;
+      renderWalletActivity(uid);
+    });
+    document.getElementById("walletActivityFromFilter").addEventListener("change", e => {
+      walletActivityFilters.dateFrom = e.target.value;
+      renderWalletActivity(uid);
+    });
+    document.getElementById("walletActivityToFilter").addEventListener("change", e => {
+      walletActivityFilters.dateTo = e.target.value;
+      renderWalletActivity(uid);
+    });
+  }
+
+  const toggleBtn = document.getElementById("toggleWalletActivityBtn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      walletActivityExpanded = !walletActivityExpanded;
+      renderWalletActivity(uid);
+    });
+  }
 
   el.querySelectorAll(".expense-row[data-id]").forEach(row => {
     row.addEventListener("click", () => openExpenseForm("edit", row.dataset.id));
@@ -1277,18 +1315,40 @@ document.getElementById("addCategoryBtn").addEventListener("click", async () => 
   }
 });
 
+let categoriesExpanded = false;
+
 function renderCategoryManageList() {
   const el = document.getElementById("categoryManageList");
   const ids = Object.keys(categoriesCache).sort((a, b) => (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
 
-  el.innerHTML = ids.length
-    ? ids.map(id => `
-        <div class="manage-row">
-          ${categoryBadgeHtml(id, categoriesCache[id].name, true)}
-          <span class="manage-row-name">${escapeHtml(categoriesCache[id].name)}</span>
-          <button type="button" class="manage-row-remove" data-id="${id}" aria-label="Delete category">✕</button>
-        </div>`).join("")
-    : `<p class="empty-hint">No categories yet — add the first one above.</p>`;
+  if (!ids.length) {
+    el.innerHTML = `<p class="empty-hint">No categories yet — add the first one above.</p>`;
+    return;
+  }
+
+  const rowHtml = id => `
+    <div class="manage-row">
+      ${categoryBadgeHtml(id, categoriesCache[id].name, true)}
+      <span class="manage-row-name">${escapeHtml(categoriesCache[id].name)}</span>
+      <button type="button" class="manage-row-remove" data-id="${id}" aria-label="Delete category">✕</button>
+    </div>`;
+
+  if (!categoriesExpanded) {
+    el.innerHTML = `<button type="button" class="view-all-btn" id="viewAllCategoriesBtn">View all categories (${ids.length})</button>`;
+    document.getElementById("viewAllCategoriesBtn").addEventListener("click", () => {
+      categoriesExpanded = true;
+      renderCategoryManageList();
+    });
+    return;
+  }
+
+  el.innerHTML = `<button type="button" class="view-all-btn" id="hideCategoriesBtn">Hide categories</button>` +
+    ids.map(rowHtml).join("");
+
+  document.getElementById("hideCategoriesBtn").addEventListener("click", () => {
+    categoriesExpanded = false;
+    renderCategoryManageList();
+  });
 
   el.querySelectorAll(".manage-row-remove").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -1338,20 +1398,24 @@ async function adjustFund(path, inputId, dateInputId) {
   }
 }
 
+let fundActivityExpanded = false;
+const FUND_ACTIVITY_PREVIEW_COUNT = 5;
+
 function renderFundActivity() {
   const el = document.getElementById("fundActivityList");
   if (!el) return;
 
-  const rows = Object.entries(fundLedgerCache)
-    .sort((a, b) => (b[1].date + b[1].createdAt).localeCompare(a[1].date + a[1].createdAt))
-    .slice(0, 30);
+  const sorted = Object.entries(fundLedgerCache)
+    .sort((a, b) => (b[1].date + b[1].createdAt).localeCompare(a[1].date + a[1].createdAt));
 
-  if (rows.length === 0) {
+  if (sorted.length === 0) {
     el.innerHTML = `<p class="empty-hint">No fund activity yet.</p>`;
     return;
   }
 
-  el.innerHTML = rows.map(([id, r]) => {
+  const rows = fundActivityExpanded ? sorted : sorted.slice(0, FUND_ACTIVITY_PREVIEW_COUNT);
+
+  const rowsHtml = rows.map(([id, r]) => {
     const label = r.note || `${r.type === "bank" ? "Bank" : "Cash"} ${Number(r.amount) >= 0 ? "top-up" : "correction"}`;
     const positive = Number(r.amount) >= 0;
     return `
@@ -1364,7 +1428,21 @@ function renderFundActivity() {
         <span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>
       </div>`;
   }).join("");
-}
+
+  const toggleHtml = sorted.length > FUND_ACTIVITY_PREVIEW_COUNT
+    ? `<button type="button" class="view-all-btn" id="toggleFundActivityBtn">${fundActivityExpanded ? "Show recent only" : `View all fund activity (${sorted.length})`}</button>`
+    : "";
+
+  el.innerHTML = rowsHtml + toggleHtml;
+
+  const toggleBtn = document.getElementById("toggleFundActivityBtn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      fundActivityExpanded = !fundActivityExpanded;
+      renderFundActivity();
+    });
+  }
+}}
 
 /* =========================================================
    ADMIN — wallets (admin can adjust anyone's, also moves cash)
