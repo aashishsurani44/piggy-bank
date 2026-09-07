@@ -1442,7 +1442,7 @@ function renderFundActivity() {
       renderFundActivity();
     });
   }
-}}
+}
 
 /* =========================================================
    ADMIN — wallets (admin can adjust anyone's, also moves cash)
