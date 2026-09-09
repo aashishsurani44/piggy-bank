@@ -54,6 +54,8 @@ let expensesCache = {};      // { id: { amount, description, date, month, paidBy
 let fundsCache = { bank: 0, cash: 0 };
 let walletsCache = {};       // { uid: number }
 let fundLedgerCache = {};    // { id: { type, amount, date, month, isCarryForward, isWalletTransfer, note, createdBy, createdAt } }
+let noteCategoriesCache = {};  // { id: { name, createdAt } } — admin-managed month-tag categories (e.g. "Trip")
+let monthlyNotesCache = {};    // { yyyymm: { text, noteCategoryIds: { id: true }, updatedAt, updatedBy } }
 
 let selectedMonth = todayStr().slice(0, 7); // "YYYY-MM"
 let currentView = "dashboard";
@@ -318,7 +320,7 @@ function switchView(view) {
   if (view === "dashboard") renderDashboard();
   if (view === "analysis") { populateFilterYearOptions(); applyFilters(); }
   if (view === "wallet") renderWalletPage();
-  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); renderWalletPage(); }
+  if (view === "admin") { renderCategoryManageList(); renderNoteCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); renderWalletPage(); }
 }
 
 document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -356,15 +358,16 @@ function attachDataListeners() {
     if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
   });
 
-      db.ref("expenses").on("value", snap => {
-    expensesCache = snap.val() || {};
-    expensesLoaded = true;
-    renderDashboard();
-    populateFilterYearOptions();
-    if (currentView === "analysis") applyFilters();
-    if (currentView === "wallet") renderWalletActivity(currentUser.uid);
-    if (!document.getElementById("allExpensesOverlay").classList.contains("hidden")) renderAllExpensesList();
-    if (expensesLoaded && fundLedgerLoaded) syncCarryForwardEntries();
+  db.ref("noteCategories").on("value", snap => {
+    noteCategoriesCache = snap.val() || {};
+    if (currentView === "admin") renderNoteCategoryManageList();
+    if (currentView === "dashboard") renderMonthNoteCategoryChips();
+    populateForecastNoteCategoryOptions();
+  });
+
+  db.ref("monthlyNotes").on("value", snap => {
+    monthlyNotesCache = snap.val() || {};
+    if (currentView === "dashboard") loadMonthNotes();
   });
 
   db.ref("funds").on("value", snap => {
@@ -397,6 +400,8 @@ function detachDataListeners() {
   db.ref("funds").off();
   db.ref("wallets").off();
   db.ref("fundLedger").off();
+  db.ref("noteCategories").off();
+  db.ref("monthlyNotes").off();
   listenersAttached = false;
   expensesLoaded = false;
   fundLedgerLoaded = false;
@@ -756,11 +761,10 @@ function chipRowHtml(groupKey, options, activeValue) {
   `).join("");
 }
 
-// --- with ---
 function setFilterGroupVisible(chipContainerId, visible) {
   const chipEl = document.getElementById(chipContainerId);
   if (!chipEl) return;
-  const group = chipEl.closest(".filter-group") || chipEl.parentElement;
+  const group = chipEl.closest(".filter-section") || chipEl.parentElement;
   if (group) group.style.display = visible ? "" : "none";
 }
 
@@ -875,15 +879,47 @@ function expenseRowHtml(id, e) {
    ========================================================= */
 function loadMonthNotes() {
   document.getElementById("notesMonthLabel").textContent = monthLabel(selectedMonth);
-  db.ref("monthlyNotes/" + selectedMonth).once("value").then(snap => {
-    const data = snap.val();
-    document.getElementById("monthNotesInput").value = data ? (data.text || "") : "";
+  const data = monthlyNotesCache[selectedMonth];
+  document.getElementById("monthNotesInput").value = data ? (data.text || "") : "";
+  renderMonthNoteCategoryChips();
+}
+
+function renderMonthNoteCategoryChips() {
+  const el = document.getElementById("monthNoteCategoryChips");
+  if (!el) return;
+
+  const ids = Object.keys(noteCategoriesCache).sort((a, b) => (noteCategoriesCache[a].name || "").localeCompare(noteCategoriesCache[b].name || ""));
+  const activeIds = (monthlyNotesCache[selectedMonth] && monthlyNotesCache[selectedMonth].noteCategoryIds) || {};
+  const isAdmin = currentUser.role === "admin";
+
+  if (!ids.length) {
+    el.innerHTML = isAdmin ? `<p class="hint-text">No note categories yet — add some in Admin.</p>` : "";
+    return;
+  }
+
+  el.innerHTML = ids.map(id => `
+    <button type="button" class="chip${activeIds[id] ? " chip-active" : ""}" data-id="${id}" ${isAdmin ? "" : "disabled"}>${escapeHtml(noteCategoriesCache[id].name)}</button>
+  `).join("");
+
+  if (!isAdmin) return;
+
+  el.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", async () => {
+      const id = chip.dataset.id;
+      const current = monthlyNotesCache[selectedMonth] && monthlyNotesCache[selectedMonth].noteCategoryIds;
+      const isActive = !!(current && current[id]);
+      try {
+        await db.ref("monthlyNotes/" + selectedMonth + "/noteCategoryIds/" + id).set(isActive ? null : true);
+      } catch (err) {
+        toast("Could not update note category");
+      }
+    });
   });
 }
 
 document.getElementById("saveMonthNotesBtn").addEventListener("click", () => {
   const text = document.getElementById("monthNotesInput").value.trim();
-  db.ref("monthlyNotes/" + selectedMonth).set({
+  db.ref("monthlyNotes/" + selectedMonth).update({
     text, updatedAt: Date.now(), updatedBy: currentUser.uid
   }).then(() => toast("Note saved")).catch(() => toast("Could not save note"));
 });
@@ -1157,28 +1193,78 @@ function toggleCategoryDrilldown(catId, items) {
 /* =========================================================
    FORECAST
    ========================================================= */
+let forecastSourceMode = "lookback"; // "lookback" | "noteCategory"
+
+function renderForecastSourceModeChips() {
+  const el = document.getElementById("forecastSourceModeChips");
+  if (!el) return;
+  el.innerHTML = [
+    { value: "lookback", label: "Recent months" },
+    { value: "noteCategory", label: "Note category" }
+  ].map(opt => `
+    <button type="button" class="chip${opt.value === forecastSourceMode ? " chip-active" : ""}" data-mode="${opt.value}">${opt.label}</button>
+  `).join("");
+
+  el.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      forecastSourceMode = chip.dataset.mode;
+      renderForecastSourceModeChips();
+      document.getElementById("forecastLookbackWrap").classList.toggle("hidden", forecastSourceMode !== "lookback");
+      document.getElementById("forecastNoteCategoryWrap").classList.toggle("hidden", forecastSourceMode !== "noteCategory");
+    });
+  });
+}
+renderForecastSourceModeChips();
+
+function populateForecastNoteCategoryOptions() {
+  const select = document.getElementById("forecastNoteCategory");
+  if (!select) return;
+  const ids = Object.keys(noteCategoriesCache).sort((a, b) => (noteCategoriesCache[a].name || "").localeCompare(noteCategoriesCache[b].name || ""));
+  const current = select.value;
+  select.innerHTML = ids.map(id => `<option value="${id}">${escapeHtml(noteCategoriesCache[id].name)}</option>`).join("");
+  if (ids.includes(current)) select.value = current;
+}
+
 document.getElementById("generateForecastBtn").addEventListener("click", () => {
   const errEl = document.getElementById("forecastError");
   errEl.textContent = "";
 
-  const lookback = document.getElementById("forecastLookback").value;
   const amount = parseFloat(document.getElementById("forecastAmount").value);
-
   if (!amount || amount <= 0) { errEl.textContent = "Enter an amount greater than 0."; return; }
 
-  let fromDate = null;
-  if (lookback !== "all") {
-    const months = parseInt(lookback, 10);
-    const d = new Date();
-    d.setMonth(d.getMonth() - months);
-    fromDate = d.toISOString().slice(0, 10);
-  }
+  let relevant;
 
-  const relevant = Object.values(expensesCache).filter(e => !fromDate || e.date >= fromDate);
-  if (relevant.length === 0) {
-    document.getElementById("forecastResultCard").classList.add("hidden");
-    errEl.textContent = "Not enough expense history yet for this period.";
-    return;
+  if (forecastSourceMode === "noteCategory") {
+    const noteCategoryId = document.getElementById("forecastNoteCategory").value;
+    if (!noteCategoryId) { errEl.textContent = "Pick a note category first."; return; }
+
+    const taggedMonths = new Set(
+      Object.entries(monthlyNotesCache)
+        .filter(([, note]) => note.noteCategoryIds && note.noteCategoryIds[noteCategoryId])
+        .map(([yyyymm]) => yyyymm)
+    );
+    relevant = Object.values(expensesCache).filter(e => taggedMonths.has(e.month));
+    if (relevant.length === 0) {
+      document.getElementById("forecastResultCard").classList.add("hidden");
+      errEl.textContent = "No expenses found in months tagged with that note category yet.";
+      return;
+    }
+  } else {
+    const lookback = document.getElementById("forecastLookback").value;
+    let fromDate = null;
+    if (lookback !== "all") {
+      const months = parseInt(lookback, 10);
+      const d = new Date();
+      d.setMonth(d.getMonth() - months);
+      fromDate = d.toISOString().slice(0, 10);
+    }
+
+    relevant = Object.values(expensesCache).filter(e => !fromDate || e.date >= fromDate);
+    if (relevant.length === 0) {
+      document.getElementById("forecastResultCard").classList.add("hidden");
+      errEl.textContent = "Not enough expense history yet for this period.";
+      return;
+    }
   }
 
   const catTotals = {};
@@ -1401,6 +1487,80 @@ function renderCategoryManageList() {
         toast("Category deleted");
       } catch (err) {
         toast("Could not delete category");
+      }
+    });
+  });
+}
+
+/* =========================================================
+   ADMIN — note categories (month tags used by Forecast)
+   ========================================================= */
+document.getElementById("addNoteCategoryBtn").addEventListener("click", async () => {
+  const input = document.getElementById("newNoteCategoryInput");
+  const name = input.value.trim();
+  if (!name) return;
+
+  const exists = Object.values(noteCategoriesCache).some(c => (c.name || "").toLowerCase() === name.toLowerCase());
+  if (exists) { toast("That note category already exists"); return; }
+
+  try {
+    await db.ref("noteCategories").push({ name, createdAt: Date.now() });
+    input.value = "";
+    toast("Note category added");
+  } catch (err) {
+    toast("Could not add note category");
+  }
+});
+
+let noteCategoriesExpanded = false;
+
+function renderNoteCategoryManageList() {
+  const el = document.getElementById("noteCategoryManageList");
+  if (!el) return;
+  const ids = Object.keys(noteCategoriesCache).sort((a, b) => (noteCategoriesCache[a].name || "").localeCompare(noteCategoriesCache[b].name || ""));
+
+  if (!ids.length) {
+    el.innerHTML = `<p class="empty-hint">No note categories yet — add one above (e.g. "Trip").</p>`;
+    return;
+  }
+
+  const rowHtml = id => `
+    <div class="manage-row">
+      <span class="manage-row-name">${escapeHtml(noteCategoriesCache[id].name)}</span>
+      <button type="button" class="manage-row-remove" data-id="${id}" aria-label="Delete note category">✕</button>
+    </div>`;
+
+  if (!noteCategoriesExpanded) {
+    el.innerHTML = `<button type="button" class="view-all-btn" id="viewAllNoteCategoriesBtn">View all note categories (${ids.length})</button>`;
+    document.getElementById("viewAllNoteCategoriesBtn").addEventListener("click", () => {
+      noteCategoriesExpanded = true;
+      renderNoteCategoryManageList();
+    });
+    return;
+  }
+
+  el.innerHTML = `<button type="button" class="view-all-btn" id="hideNoteCategoriesBtn">Hide note categories</button>` +
+    ids.map(rowHtml).join("");
+
+  document.getElementById("hideNoteCategoriesBtn").addEventListener("click", () => {
+    noteCategoriesExpanded = false;
+    renderNoteCategoryManageList();
+  });
+
+  el.querySelectorAll(".manage-row-remove").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`Delete note category "${noteCategoriesCache[btn.dataset.id].name}"? It will be removed from any months tagged with it.`)) return;
+      try {
+        const updates = { ["noteCategories/" + btn.dataset.id]: null };
+        Object.entries(monthlyNotesCache).forEach(([yyyymm, note]) => {
+          if (note.noteCategoryIds && note.noteCategoryIds[btn.dataset.id]) {
+            updates["monthlyNotes/" + yyyymm + "/noteCategoryIds/" + btn.dataset.id] = null;
+          }
+        });
+        await db.ref().update(updates);
+        toast("Note category deleted");
+      } catch (err) {
+        toast("Could not delete note category");
       }
     });
   });
