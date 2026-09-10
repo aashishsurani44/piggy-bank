@@ -108,6 +108,12 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+function truncateText(str, maxLen) {
+  if (!str) return "";
+  const s = String(str);
+  return s.length > maxLen ? s.slice(0, maxLen).trimEnd() + "..." : s;
+}
+
 function colorForCategory(catId) {
   if (!catId) return "#9CA3AF";
   let hash = 0;
@@ -867,7 +873,7 @@ function expenseRowHtml(id, e) {
     <button type="button" class="expense-row" data-id="${id}">
       ${categoryBadgeHtml(e.categoryId, e.categoryName)}
       <span class="expense-info">
-        <span class="expense-desc">${escapeHtml(e.description)}</span>
+        <span class="expense-desc">${escapeHtml(truncateText(e.description, 30))}</span>
         <span class="expense-meta">${escapeHtml(e.categoryName)} · ${escapeHtml(e.paidByName)} · ${formatDate(e.date)}${walletTag}</span>
       </span>
       <span class="expense-amount">${formatCurrency(e.amount)}</span>
@@ -1385,7 +1391,7 @@ function walletActivityRowHtml(r) {
       <button type="button" class="expense-row" data-id="${r.id}">
         ${categoryBadgeHtml(r.categoryId, r.categoryName)}
         <span class="expense-info">
-          <span class="expense-desc">${escapeHtml(r.note)}</span>
+           <span class="expense-desc">${escapeHtml(truncateText(r.note, 30))}</span>
           <span class="expense-meta">${formatDate(r.date)}</span>
         </span>
         ${amountHtml}
@@ -1395,7 +1401,7 @@ function walletActivityRowHtml(r) {
     <div class="expense-row fund-row-static">
       ${categoryBadgeHtml("wallet", "Wallet")}
       <span class="expense-info">
-        <span class="expense-desc">${escapeHtml(r.note)}</span>
+         <span class="expense-desc">${escapeHtml(truncateText(r.note, 30))}</span>
         <span class="expense-meta">${formatDate(r.date)}</span>
       </span>
       ${amountHtml}
@@ -1610,7 +1616,7 @@ function fundActivityRowHtml(r) {
     <div class="expense-row fund-row-static">
       ${categoryBadgeHtml(r.type, r.type === "bank" ? "Bank" : "Cash", false)}
       <span class="expense-info">
-        <span class="expense-desc">${escapeHtml(label)}</span>
+        <span class="expense-desc">${escapeHtml(truncateText(label, 30))}</span>
         <span class="expense-meta">${r.type === "bank" ? "Bank" : "Cash"} · ${formatDate(r.date)}</span>
       </span>
       <span class="expense-amount" style="color:${positive ? "var(--primary)" : "var(--negative)"}">${positive ? "+" : "-"}${formatCurrency(Math.abs(r.amount))}</span>
