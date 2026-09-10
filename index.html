@@ -99,7 +99,7 @@
 
       <div class="card">
         <div class="card-header"><span>Notes for <span id="notesMonthLabel">this month</span></span></div>
-        <div id="monthNoteCategoryChips" class="chip-row"></div>
+        <div id="monthNoteCategoryChips" class="chip-row"></div><br>
         <textarea id="monthNotesInput" class="notes-input" rows="4" placeholder="Anything worth remembering about this month's spending — a big one-off purchase, a plan for next month, etc."></textarea>
         <button type="button" id="saveMonthNotesBtn" class="btn-secondary">Save note</button>
       </div>
@@ -192,6 +192,7 @@
         <div class="chip-row" id="forecastSourceModeChips"></div>
 
         <div id="forecastLookbackWrap">
+          <label class="field-label" for="forecastLookback">Select Number of Months</label>
           <select id="forecastLookback">
             <option value="3">Last 3 months</option>
             <option value="6" selected>Last 6 months</option>
@@ -201,7 +202,7 @@
         </div>
 
         <div id="forecastNoteCategoryWrap" class="hidden">
-          <label class="field-label" for="forecastNoteCategory">Note category</label>
+          <label class="field-label" for="forecastNoteCategory">Select Note category</label>
           <select id="forecastNoteCategory"></select>
         </div>
 
@@ -255,7 +256,7 @@
           <button type="button" id="updateBankBtn" class="btn-secondary">Update</button>
         </div>
         <br>
-        <div>
+        <div class="fund-row">
           <span class="fund-name">Add Cash Balance</span>
         </div><br>
         <div class="inline-form">
