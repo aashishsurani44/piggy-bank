@@ -367,7 +367,8 @@ function switchView(view) {
   if (view === "dashboard") renderDashboard();
   if (view === "analysis") { populateFilterYearOptions(); applyFilters(); }
   if (view === "wallet") renderWalletPage();
-  if (view === "admin") { renderCategoryManageList(); renderNoteCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); renderWalletPage(); }
+  if (view === "forecast") renderForecastCategoryChips();
+  if (view === "admin") { renderCategoryManageList(); renderFundsUI(); renderFundActivity(); renderWalletUI(); }
 }
 
 document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -385,10 +386,11 @@ function attachDataListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
 
-  db.ref("categories").on("value", snap => {
+    db.ref("categories").on("value", snap => {
     categoriesCache = snap.val() || {};
     populateCategoryDropdowns();
     renderCategoryManageList();
+    renderForecastCategoryChips();
     renderDashboard();
     if (currentView === "analysis") applyFilters();
   });
@@ -1272,46 +1274,79 @@ function populateForecastNoteCategoryOptions() {
   if (ids.includes(current)) select.value = current;
 }
 
+let forecastSelectedCats = new Set();
+
+function renderForecastCategoryChips() {
+  const el = document.getElementById("forecastCategoryChips");
+  if (!el) return;
+  const ids = Object.keys(categoriesCache).sort((a, b) =>
+    (categoriesCache[a].name || "").localeCompare(categoriesCache[b].name || ""));
+
+  // Drop any selections whose category no longer exists, then default to all selected.
+  forecastSelectedCats.forEach(id => { if (!ids.includes(id)) forecastSelectedCats.delete(id); });
+  if (forecastSelectedCats.size === 0) ids.forEach(id => forecastSelectedCats.add(id));
+
+  if (ids.length === 0) {
+    el.innerHTML = `<p class="empty-hint">No categories yet.</p>`;
+    return;
+  }
+
+  el.innerHTML = ids.map(id => `
+    <button type="button" class="chip${forecastSelectedCats.has(id) ? " chip-active" : ""}" data-cat="${id}">${escapeHtml(categoriesCache[id].name)}</button>
+  `).join("");
+
+  el.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const id = chip.dataset.cat;
+      if (forecastSelectedCats.has(id)) forecastSelectedCats.delete(id);
+      else forecastSelectedCats.add(id);
+      renderForecastCategoryChips();
+    });
+  });
+
+  const allSelected = ids.every(id => forecastSelectedCats.has(id));
+  document.getElementById("forecastSelectAllBtn").textContent = allSelected ? "Clear all" : "Select all";
+}
+
+document.getElementById("forecastSelectAllBtn").addEventListener("click", () => {
+  const ids = Object.keys(categoriesCache);
+  const allSelected = ids.length > 0 && ids.every(id => forecastSelectedCats.has(id));
+  forecastSelectedCats.clear();
+  if (!allSelected) ids.forEach(id => forecastSelectedCats.add(id));
+  renderForecastCategoryChips();
+});
+
 document.getElementById("generateForecastBtn").addEventListener("click", () => {
   const errEl = document.getElementById("forecastError");
   errEl.textContent = "";
 
+  const lookback = document.getElementById("forecastLookback").value;
   const amount = parseFloat(document.getElementById("forecastAmount").value);
+
   if (!amount || amount <= 0) { errEl.textContent = "Enter an amount greater than 0."; return; }
+  if (forecastSelectedCats.size === 0) {
+    document.getElementById("forecastResultCard").classList.add("hidden");
+    errEl.textContent = "Select at least one category.";
+    return;
+  }
 
-  let relevant;
+  let fromDate = null;
+  if (lookback !== "all") {
+    const months = parseInt(lookback, 10);
+    const d = new Date();
+    d.setMonth(d.getMonth() - months);
+    fromDate = d.toISOString().slice(0, 10);
+  }
 
-  if (forecastSourceMode === "noteCategory") {
-    const noteCategoryId = document.getElementById("forecastNoteCategory").value;
-    if (!noteCategoryId) { errEl.textContent = "Pick a note category first."; return; }
+  // Only expenses in the selected categories feed the weighting, so the whole budget
+  // is distributed across just those categories.
+  const relevant = Object.values(expensesCache)
+    .filter(e => (!fromDate || e.date >= fromDate) && forecastSelectedCats.has(e.categoryId));
 
-    const taggedMonths = new Set(
-      Object.entries(monthlyNotesCache)
-        .filter(([, note]) => note.noteCategoryIds && note.noteCategoryIds[noteCategoryId])
-        .map(([yyyymm]) => yyyymm)
-    );
-    relevant = Object.values(expensesCache).filter(e => taggedMonths.has(e.month));
-    if (relevant.length === 0) {
-      document.getElementById("forecastResultCard").classList.add("hidden");
-      errEl.textContent = "No expenses found in months tagged with that note category yet.";
-      return;
-    }
-  } else {
-    const lookback = document.getElementById("forecastLookback").value;
-    let fromDate = null;
-    if (lookback !== "all") {
-      const months = parseInt(lookback, 10);
-      const d = new Date();
-      d.setMonth(d.getMonth() - months);
-      fromDate = d.toISOString().slice(0, 10);
-    }
-
-    relevant = Object.values(expensesCache).filter(e => !fromDate || e.date >= fromDate);
-    if (relevant.length === 0) {
-      document.getElementById("forecastResultCard").classList.add("hidden");
-      errEl.textContent = "Not enough expense history yet for this period.";
-      return;
-    }
+  if (relevant.length === 0) {
+    document.getElementById("forecastResultCard").classList.add("hidden");
+    errEl.textContent = "No spending history in the selected categories for this period.";
+    return;
   }
 
   const catTotals = {};
