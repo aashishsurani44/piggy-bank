@@ -630,6 +630,13 @@ textarea { resize: vertical; font-family: var(--font-body); }
 
 .filter-section { margin-bottom: 20px; }
 
+.forecast-cat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+
 .date-range-row {
   display: flex;
   align-items: center;
