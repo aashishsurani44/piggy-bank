@@ -308,6 +308,47 @@ function enterApp() {
   switchView("dashboard");
   attachDataListeners();
   loadMonthNotes();
+  setTimeout(pruneOldData, 2500);
+  armBackButtonGuard();
+}
+
+/* =========================================================
+   ANDROID / MOBILE BACK BUTTON HANDLING
+   A single back press closes the topmost open overlay, or
+   returns to Dashboard from any other view. Only a second
+   back press on Dashboard with nothing open (within 2s of
+   the first) is allowed to actually exit the app.
+   ========================================================= */
+let backButtonArmed = false;
+let lastDashboardBackPress = 0;
+
+function pushBackGuardState() {
+  history.pushState({ pbGuard: true }, "", location.href);
+}
+
+function closeTopmostOverlay() {
+  const filterOv = document.getElementById("expenseFilterOverlay");
+  if (!filterOv.classList.contains("hidden")) { filterOv.classList.add("hidden"); return true; }
+  const expenseOv = document.getElementById("expenseOverlay");
+  if (!expenseOv.classList.contains("hidden")) { expenseOv.classList.add("hidden"); return true; }
+  const allExpOv = document.getElementById("allExpensesOverlay");
+  if (!allExpOv.classList.contains("hidden")) { allExpOv.classList.add("hidden"); return true; }
+  return false;
+}
+
+function armBackButtonGuard() {
+  if (backButtonArmed) return;
+  backButtonArmed = true;
+  pushBackGuardState();
+  window.addEventListener("popstate", () => {
+    if (closeTopmostOverlay()) { pushBackGuardState(); return; }
+    if (currentView !== "dashboard") { switchView("dashboard"); pushBackGuardState(); return; }
+    const now = Date.now();
+    if (now - lastDashboardBackPress < 2000) return; // second press in time — let it exit
+    lastDashboardBackPress = now;
+    toast("Press back again to exit");
+    pushBackGuardState();
+  });
 }
 
 /* =========================================================
