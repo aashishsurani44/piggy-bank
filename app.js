@@ -308,7 +308,6 @@ function enterApp() {
   switchView("dashboard");
   attachDataListeners();
   loadMonthNotes();
-  setTimeout(pruneOldData, 2500);
   armBackButtonGuard();
 }
 
@@ -411,7 +410,7 @@ function attachDataListeners() {
     noteCategoriesCache = snap.val() || {};
     if (currentView === "admin") renderNoteCategoryManageList();
     if (currentView === "dashboard") renderMonthNoteCategoryChips();
-    populateForecastNoteCategoryOptions();
+    renderForecastNoteCategoryChips();
   });
 
   db.ref("monthlyNotes").on("value", snap => {
@@ -1265,13 +1264,33 @@ function renderForecastSourceModeChips() {
 }
 renderForecastSourceModeChips();
 
-function populateForecastNoteCategoryOptions() {
-  const select = document.getElementById("forecastNoteCategory");
-  if (!select) return;
-  const ids = Object.keys(noteCategoriesCache).sort((a, b) => (noteCategoriesCache[a].name || "").localeCompare(noteCategoriesCache[b].name || ""));
-  const current = select.value;
-  select.innerHTML = ids.map(id => `<option value="${id}">${escapeHtml(noteCategoriesCache[id].name)}</option>`).join("");
-  if (ids.includes(current)) select.value = current;
+let forecastSelectedNoteCats = new Set();
+
+function renderForecastNoteCategoryChips() {
+  const el = document.getElementById("forecastNoteCategoryChips");
+  if (!el) return;
+  const ids = Object.keys(noteCategoriesCache).sort((a, b) =>
+    (noteCategoriesCache[a].name || "").localeCompare(noteCategoriesCache[b].name || ""));
+
+  forecastSelectedNoteCats.forEach(id => { if (!ids.includes(id)) forecastSelectedNoteCats.delete(id); });
+
+  if (ids.length === 0) {
+    el.innerHTML = `<p class="empty-hint">No note categories yet — add some in Admin.</p>`;
+    return;
+  }
+
+  el.innerHTML = ids.map(id => `
+    <button type="button" class="chip${forecastSelectedNoteCats.has(id) ? " chip-active" : ""}" data-note-cat="${id}">${escapeHtml(noteCategoriesCache[id].name)}</button>
+  `).join("");
+
+  el.querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const id = chip.dataset.noteCat;
+      if (forecastSelectedNoteCats.has(id)) forecastSelectedNoteCats.delete(id);
+      else forecastSelectedNoteCats.add(id);
+      renderForecastNoteCategoryChips();
+    });
+  });
 }
 
 let forecastSelectedCats = new Set();
@@ -1320,9 +1339,7 @@ document.getElementById("generateForecastBtn").addEventListener("click", () => {
   const errEl = document.getElementById("forecastError");
   errEl.textContent = "";
 
-  const lookback = document.getElementById("forecastLookback").value;
   const amount = parseFloat(document.getElementById("forecastAmount").value);
-
   if (!amount || amount <= 0) { errEl.textContent = "Enter an amount greater than 0."; return; }
   if (forecastSelectedCats.size === 0) {
     document.getElementById("forecastResultCard").classList.add("hidden");
@@ -1330,22 +1347,39 @@ document.getElementById("generateForecastBtn").addEventListener("click", () => {
     return;
   }
 
-  let fromDate = null;
-  if (lookback !== "all") {
-    const months = parseInt(lookback, 10);
-    const d = new Date();
-    d.setMonth(d.getMonth() - months);
-    fromDate = d.toISOString().slice(0, 10);
+  let monthFiltered;
+
+  if (forecastSourceMode === "noteCategory") {
+    if (forecastSelectedNoteCats.size === 0) {
+      document.getElementById("forecastResultCard").classList.add("hidden");
+      errEl.textContent = "Select at least one note category.";
+      return;
+    }
+    const taggedMonths = new Set(
+      Object.entries(monthlyNotesCache)
+        .filter(([, note]) => note.noteCategoryIds && Object.keys(note.noteCategoryIds).some(id => forecastSelectedNoteCats.has(id)))
+        .map(([yyyymm]) => yyyymm)
+    );
+    monthFiltered = Object.values(expensesCache).filter(e => taggedMonths.has(e.month));
+  } else {
+    const lookback = document.getElementById("forecastLookback").value;
+    let fromDate = null;
+    if (lookback !== "all") {
+      const months = parseInt(lookback, 10);
+      const d = new Date();
+      d.setMonth(d.getMonth() - months);
+      fromDate = d.toISOString().slice(0, 10);
+    }
+    monthFiltered = Object.values(expensesCache).filter(e => !fromDate || e.date >= fromDate);
   }
 
-  // Only expenses in the selected categories feed the weighting, so the whole budget
-  // is distributed across just those categories.
-  const relevant = Object.values(expensesCache)
-    .filter(e => (!fromDate || e.date >= fromDate) && forecastSelectedCats.has(e.categoryId));
+  const relevant = monthFiltered.filter(e => forecastSelectedCats.has(e.categoryId));
 
   if (relevant.length === 0) {
     document.getElementById("forecastResultCard").classList.add("hidden");
-    errEl.textContent = "No spending history in the selected categories for this period.";
+    errEl.textContent = forecastSourceMode === "noteCategory"
+      ? "No expenses found in months tagged with the selected note categories."
+      : "No spending history in the selected categories for this period.";
     return;
   }
 
