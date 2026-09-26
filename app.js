@@ -587,7 +587,7 @@ function syncCarryForwardEntries() {
       .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
      const cashSpent = Object.values(expensesCache)
-      .filter(e => e.month === sourceMonth && (e.fromWallet || e.paymentMode === "Cash"))
+      .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Cash")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
@@ -654,14 +654,12 @@ function renderDashboard() {
   const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-   // Available = Cash added (which already includes the carry-in) + wallet moves - spent,
-  // where "spent" now includes expenses paid from a wallet as well as straight cash —
-  // wallet money is treated as part of the shared cash pool for spend-tracking purposes.
-  // Note: if a wallet was also topped up via the separate Wallet-page transfer (which
-  // already subtracts from Available at transfer time), spending that same money via a
-  // fromWallet expense will now be subtracted a second time here — flag if that turns up.
+   // Available = Cash added (which already includes the carry-in) + wallet moves - cash
+  // spent from the shared pool. Wallet-funded expenses aren't subtracted again here
+  // (that money already left Available the moment it was moved into the wallet) —
+  // they still count in the general "Total spent" stat and debit the wallet itself.
   const cashSpentThisMonth = Object.values(expensesCache)
-    .filter(e => e.month === selectedMonth && (e.fromWallet || e.paymentMode === "Cash"))
+    .filter(e => e.month === selectedMonth && !e.fromWallet && e.paymentMode === "Cash")
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const walletTransfers = walletTransferNetForMonth(selectedMonth);
     const available = cashAdded + walletTransfers - cashSpentThisMonth;
