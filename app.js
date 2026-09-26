@@ -587,11 +587,11 @@ function syncCarryForwardEntries() {
       .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
      const cashSpent = Object.values(expensesCache)
-      .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Cash")
+      .filter(e => e.month === sourceMonth && (e.fromWallet || e.paymentMode === "Cash"))
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
-    const cashLeftover = roundMoney(carryIn("cash", sourceMonth) + fundNetForMonth("cash", sourceMonth) + walletTransferNetForMonth(sourceMonth) - cashSpent);
+    const cashLeftover = roundMoney(carryIn("cash", sourceMonth) + fundNetForMonth("cash", sourceMonth) - cashSpent);
     corrected.bank[sourceMonth] = bankLeftover;
     corrected.cash[sourceMonth] = cashLeftover;
 
@@ -654,15 +654,14 @@ function renderDashboard() {
   const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-   // Available = Cash added (which already includes the carry-in) + wallet moves - cash
-  // spent from the shared pool. Wallet-funded expenses aren't subtracted again here
-  // (that money already left Available the moment it was moved into the wallet) —
-  // they still count in the general "Total spent" stat and debit the wallet itself.
+   // Available = Cash added (which already includes the carry-in) - all spending this
+  // month, whether paid directly as cash or from a wallet. Wallet transfers (moving
+  // money into/out of a wallet without spending it) don't separately touch Available —
+  // only when it's actually spent does it count here, avoiding a double subtraction.
   const cashSpentThisMonth = Object.values(expensesCache)
-    .filter(e => e.month === selectedMonth && !e.fromWallet && e.paymentMode === "Cash")
+    .filter(e => e.month === selectedMonth && (e.fromWallet || e.paymentMode === "Cash"))
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const walletTransfers = walletTransferNetForMonth(selectedMonth);
-    const available = cashAdded + walletTransfers - cashSpentThisMonth;
+    const available = cashAdded - cashSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
