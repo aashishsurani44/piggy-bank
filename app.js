@@ -1243,7 +1243,7 @@ function renderForecastSourceModeChips() {
   const el = document.getElementById("forecastSourceModeChips");
   if (!el) return;
   el.innerHTML = [
-    { value: "lookback", label: "Recent months" },
+    { value: "lookback", label: "By date" },
     { value: "noteCategory", label: "Note category" }
   ].map(opt => `
     <button type="button" class="chip${opt.value === forecastSourceMode ? " chip-active" : ""}" data-mode="${opt.value}">${opt.label}</button>
@@ -1259,6 +1259,17 @@ function renderForecastSourceModeChips() {
   });
 }
 renderForecastSourceModeChips();
+
+function initForecastTargetDateInput() {
+  const input = document.getElementById("forecastTargetDate");
+  if (!input) return;
+  const today = new Date(todayStr() + "T00:00:00");
+  const min = new Date(today); min.setDate(min.getDate() + 1);
+  const max = new Date(today); max.setFullYear(max.getFullYear() + 1);
+  input.min = min.toISOString().slice(0, 10);
+  input.max = max.toISOString().slice(0, 10);
+}
+initForecastTargetDateInput();
 
 let forecastSelectedNoteCats = new Set();
 
@@ -1311,15 +1322,19 @@ document.getElementById("generateForecastBtn").addEventListener("click", () => {
     );
     relevant = Object.values(expensesCache).filter(e => taggedMonths.has(e.month));
   } else {
-    const lookback = document.getElementById("forecastLookback").value;
-    let fromDate = null;
-    if (lookback !== "all") {
-      const months = parseInt(lookback, 10);
-      const d = new Date();
-      d.setMonth(d.getMonth() - months);
-      fromDate = d.toISOString().slice(0, 10);
-    }
-    relevant = Object.values(expensesCache).filter(e => !fromDate || e.date >= fromDate);
+    const targetDateStr = document.getElementById("forecastTargetDate").value;
+    if (!targetDateStr) { errEl.textContent = "Pick a future date to forecast for."; return; }
+
+    const todayD = new Date(todayStr() + "T00:00:00");
+    const targetD = new Date(targetDateStr + "T00:00:00");
+    if (targetD <= todayD) { errEl.textContent = "Pick a date in the future."; return; }
+
+    const maxD = new Date(todayD); maxD.setFullYear(maxD.getFullYear() + 1);
+    if (targetD > maxD) { errEl.textContent = "Pick a date within the next year."; return; }
+
+    // No more "last N months" window — with a specific future date picked instead,
+    // the pattern is built from all expense history available so far.
+    relevant = Object.values(expensesCache);
   }
 
   if (relevant.length === 0) {
