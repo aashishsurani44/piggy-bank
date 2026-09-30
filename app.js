@@ -629,9 +629,6 @@ function reconcileCarryForwardEntry(updates, targetMonth, type, leftover, source
   };
 }
 
-// DELETE the monthEndDate() and fundBalanceAsOfMonthEnd() functions entirely — no longer used.
-
-// REPLACE renderDashboard() with:
 function renderDashboard() {
   if (!currentUser) return;
   document.getElementById("currentMonthLabel").textContent = monthLabel(selectedMonth);
@@ -654,7 +651,7 @@ function renderDashboard() {
   const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-   // Available = Cash added (which already includes the carry-in) + net wallet moves
+  // Available = Cash added (which already includes the carry-in) + net wallet moves
   // this month (across all users — topping up a wallet subtracts here immediately,
   // withdrawing back adds it back) - non-wallet spending (cash or bank). Wallet-funded
   // expenses don't touch Available here — that money already left Available the moment
@@ -666,6 +663,37 @@ function renderDashboard() {
   const walletMoves = walletTransferNetForMonth(selectedMonth);
     const available = cashAdded + walletMoves - normalSpentThisMonth;
   setStatValue("statTotalAvailable", available);
+
+  // DIAGNOSTIC — open the browser console (F12) and switch to the affected month.
+  // Remove this block once the mismatch is understood.
+  console.group("Available diagnostic — " + selectedMonth);
+  console.log("Carried in from last month (cash):", carriedIn);
+  console.log("Fresh cash added this month:", freshCashAdded);
+  console.log("Non-wallet spend this month (reduces Available):", normalSpentThisMonth);
+  console.log("Net wallet moves recorded THIS month (should reduce Available on top-up):", walletMoves);
+  console.log("=> Available:", available);
+
+  const walletExpensesThisMonth = Object.entries(expensesCache)
+    .filter(([, e]) => e.month === selectedMonth && e.fromWallet)
+    .map(([id, e]) => ({ id, amount: e.amount, paidByName: e.paidByName, date: e.date }));
+  console.log("Wallet-funded expenses THIS month (excluded from Available, total = "
+    + walletExpensesThisMonth.reduce((s, e) => s + Number(e.amount || 0), 0) + "):");
+  console.table(walletExpensesThisMonth);
+
+  const walletTransfersThisMonth = Object.entries(fundLedgerCache)
+    .filter(([, r]) => r.isWalletTransfer && r.month === selectedMonth)
+    .map(([id, r]) => ({ id, amount: r.amount, note: r.note, date: r.date, walletUid: r.walletUid }));
+  console.log("Wallet-transfer ledger entries THIS month:");
+  console.table(walletTransfersThisMonth);
+
+  const allWalletTransfersEver = Object.entries(fundLedgerCache)
+    .filter(([, r]) => r.isWalletTransfer)
+    .map(([id, r]) => ({ id, amount: r.amount, month: r.month, note: r.note, walletUid: r.walletUid }));
+  console.log("EVERY wallet-transfer entry ever recorded (checks if wallet money was ever actually deducted from Available, in any month):");
+  console.table(allWalletTransfersEver);
+
+  console.log("Current wallet balance per user:", walletsCache);
+  console.groupEnd();
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
