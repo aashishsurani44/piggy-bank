@@ -586,8 +586,8 @@ function syncCarryForwardEntries() {
     const bankSpent = Object.values(expensesCache)
       .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
-     const cashSpent = Object.values(expensesCache)
-      .filter(e => e.month === sourceMonth && (e.fromWallet || e.paymentMode === "Cash"))
+    const cashSpent = Object.values(expensesCache)
+      .filter(e => e.month === sourceMonth && !e.fromWallet)
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
@@ -654,14 +654,17 @@ function renderDashboard() {
   const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-   // Available = Cash added (which already includes the carry-in) - all spending this
-  // month, whether paid directly as cash or from a wallet. Wallet transfers (moving
-  // money into/out of a wallet without spending it) don't separately touch Available —
-  // only when it's actually spent does it count here, avoiding a double subtraction.
-  const cashSpentThisMonth = Object.values(expensesCache)
-    .filter(e => e.month === selectedMonth && (e.fromWallet || e.paymentMode === "Cash"))
+   // Available = Cash added (which already includes the carry-in) + net wallet moves
+  // this month (across all users — topping up a wallet subtracts here immediately,
+  // withdrawing back adds it back) - non-wallet spending (cash or bank). Wallet-funded
+  // expenses don't touch Available here — that money already left Available the moment
+  // it moved into the wallet; spending it just debits the wallet and still counts in
+  // the general "Total spent" stat below.
+  const normalSpentThisMonth = Object.values(expensesCache)
+    .filter(e => e.month === selectedMonth && !e.fromWallet)
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const available = cashAdded - cashSpentThisMonth;
+  const walletMoves = walletTransferNetForMonth(selectedMonth);
+    const available = cashAdded + walletMoves - normalSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
@@ -1367,6 +1370,9 @@ document.getElementById("generateForecastBtn").addEventListener("click", () => {
 
 function renderForecastResult(breakdown) {
   document.getElementById("forecastResultCard").classList.remove("hidden");
+
+  const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
+  document.getElementById("forecastTotalLine").textContent = "Total: " + formatCurrency(total);
 
   const listEl = document.getElementById("forecastBreakdownList");
   listEl.innerHTML = breakdown.map(b => `
