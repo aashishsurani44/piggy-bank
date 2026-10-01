@@ -587,7 +587,7 @@ function syncCarryForwardEntries() {
       .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
     const cashSpent = Object.values(expensesCache)
-      .filter(e => e.month === sourceMonth && !e.fromWallet)
+      .filter(e => e.month === sourceMonth)
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
@@ -652,48 +652,14 @@ function renderDashboard() {
   setStatValue("statCash", cashAdded);
 
   // Available = Cash added (which already includes the carry-in) + net wallet moves
-  // this month (across all users — topping up a wallet subtracts here immediately,
-  // withdrawing back adds it back) - non-wallet spending (cash or bank). Wallet-funded
-  // expenses don't touch Available here — that money already left Available the moment
-  // it moved into the wallet; spending it just debits the wallet and still counts in
-  // the general "Total spent" stat below.
-  const normalSpentThisMonth = Object.values(expensesCache)
-    .filter(e => e.month === selectedMonth && !e.fromWallet)
-    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  // this month (across all users, from actual Wallet-page top-up/withdrawal transfers)
+  // - ALL spending this month, any mode (cash, bank, or wallet-funded). Wallet-funded
+  // expenses are only excluded here if they were actually pre-funded by a recorded
+  // wallet transfer that already reduced Available; in practice that money is spent
+  // directly without a separate transfer step, so it must count here too.
   const walletMoves = walletTransferNetForMonth(selectedMonth);
-    const available = cashAdded + walletMoves - normalSpentThisMonth;
+    const available = cashAdded + walletMoves - spentThisMonth;
   setStatValue("statTotalAvailable", available);
-
-  // DIAGNOSTIC — open the browser console (F12) and switch to the affected month.
-  // Remove this block once the mismatch is understood.
-  console.group("Available diagnostic — " + selectedMonth);
-  console.log("Carried in from last month (cash):", carriedIn);
-  console.log("Fresh cash added this month:", freshCashAdded);
-  console.log("Non-wallet spend this month (reduces Available):", normalSpentThisMonth);
-  console.log("Net wallet moves recorded THIS month (should reduce Available on top-up):", walletMoves);
-  console.log("=> Available:", available);
-
-  const walletExpensesThisMonth = Object.entries(expensesCache)
-    .filter(([, e]) => e.month === selectedMonth && e.fromWallet)
-    .map(([id, e]) => ({ id, amount: e.amount, paidByName: e.paidByName, date: e.date }));
-  console.log("Wallet-funded expenses THIS month (excluded from Available, total = "
-    + walletExpensesThisMonth.reduce((s, e) => s + Number(e.amount || 0), 0) + "):");
-  console.table(walletExpensesThisMonth);
-
-  const walletTransfersThisMonth = Object.entries(fundLedgerCache)
-    .filter(([, r]) => r.isWalletTransfer && r.month === selectedMonth)
-    .map(([id, r]) => ({ id, amount: r.amount, note: r.note, date: r.date, walletUid: r.walletUid }));
-  console.log("Wallet-transfer ledger entries THIS month:");
-  console.table(walletTransfersThisMonth);
-
-  const allWalletTransfersEver = Object.entries(fundLedgerCache)
-    .filter(([, r]) => r.isWalletTransfer)
-    .map(([id, r]) => ({ id, amount: r.amount, month: r.month, note: r.note, walletUid: r.walletUid }));
-  console.log("EVERY wallet-transfer entry ever recorded (checks if wallet money was ever actually deducted from Available, in any month):");
-  console.table(allWalletTransfersEver);
-
-  console.log("Current wallet balance per user:", walletsCache);
-  console.groupEnd();
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
