@@ -587,7 +587,7 @@ function syncCarryForwardEntries() {
       .filter(e => e.month === sourceMonth && !e.fromWallet && e.paymentMode === "Bank")
       .reduce((s, e) => s + Number(e.amount || 0), 0);
     const cashSpent = Object.values(expensesCache)
-      .filter(e => e.month === sourceMonth)
+      .filter(e => e.month === sourceMonth && !e.fromWallet)
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
@@ -652,13 +652,15 @@ function renderDashboard() {
   setStatValue("statCash", cashAdded);
 
   // Available = Cash added (which already includes the carry-in) + net wallet moves
-  // this month (across all users, from actual Wallet-page top-up/withdrawal transfers)
-  // - ALL spending this month, any mode (cash, bank, or wallet-funded). Wallet-funded
-  // expenses are only excluded here if they were actually pre-funded by a recorded
-  // wallet transfer that already reduced Available; in practice that money is spent
-  // directly without a separate transfer step, so it must count here too.
+  // this month (across all users — a top-up subtracts here immediately, a withdrawal
+  // back to cash adds it back) - non-wallet spending only (cash or bank). A wallet-
+  // funded expense does NOT subtract again here — it already left Available the moment
+  // it was transferred into the wallet via the Wallet page.
+  const nonWalletSpentThisMonth = Object.values(expensesCache)
+    .filter(e => e.month === selectedMonth && !e.fromWallet)
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const walletMoves = walletTransferNetForMonth(selectedMonth);
-    const available = cashAdded + walletMoves - spentThisMonth;
+    const available = cashAdded + walletMoves - nonWalletSpentThisMonth;
   setStatValue("statTotalAvailable", available);
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
