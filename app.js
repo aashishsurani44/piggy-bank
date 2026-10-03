@@ -640,7 +640,9 @@ function renderDashboard() {
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   document.getElementById("statTotalExpense").textContent = formatCurrency(spentThisMonth);
 
-  const bankAdded = fundNetForMonth("bank", selectedMonth);
+  const freshBankAdded = fundNetForMonth("bank", selectedMonth);
+  const bankCarriedIn = carryForwardForMonth(selectedMonth, "bank");
+  const bankAdded = bankCarriedIn + freshBankAdded;
   setStatValue("statBank", bankAdded);
 
   // "Cash added" now includes last month's carried-forward leftover (plus or minus),
@@ -651,7 +653,7 @@ function renderDashboard() {
   const cashAdded = carriedIn + freshCashAdded;
   setStatValue("statCash", cashAdded);
 
-  // Available = Cash added (which already includes the carry-in) + net wallet moves
+   // Available = Cash added (which already includes the carry-in) + net wallet moves
   // this month (across all users — a top-up subtracts here immediately, a withdrawal
   // back to cash adds it back) - non-wallet spending only (cash or bank). A wallet-
   // funded expense does NOT subtract again here — it already left Available the moment
@@ -662,6 +664,20 @@ function renderDashboard() {
   const walletMoves = walletTransferNetForMonth(selectedMonth);
     const available = cashAdded + walletMoves - nonWalletSpentThisMonth;
   setStatValue("statTotalAvailable", available);
+
+  // DIAGNOSTIC — open the browser console (F12) and switch to the affected month.
+  // Remove this block once the mismatch is understood.
+  console.group("Available diagnostic — " + selectedMonth);
+  console.log("Cash carried in:", carriedIn, "| Fresh cash added:", freshCashAdded, "| Cash added total:", cashAdded);
+  console.log("Non-wallet spend this month:", nonWalletSpentThisMonth);
+  console.log("Net wallet moves this month (walletTransferNetForMonth):", walletMoves);
+  console.log("=> Available:", available);
+  console.table(
+    Object.entries(fundLedgerCache)
+      .filter(([, r]) => r.month === selectedMonth)
+      .map(([id, r]) => ({ id, type: r.type, amount: r.amount, isCarryForward: !!r.isCarryForward, isWalletTransfer: !!r.isWalletTransfer, walletUid: r.walletUid || "", note: r.note || "", date: r.date }))
+  );
+  console.groupEnd();
 
   const walletBal = Number((walletsCache && walletsCache[currentUser.uid]) || 0);
   setStatValue("statWallet", walletBal);
