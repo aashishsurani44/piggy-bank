@@ -591,7 +591,9 @@ function syncCarryForwardEntries() {
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const bankLeftover = roundMoney(carryIn("bank", sourceMonth) + fundNetForMonth("bank", sourceMonth) - bankSpent);
-    const cashLeftover = roundMoney(carryIn("cash", sourceMonth) + fundNetForMonth("cash", sourceMonth) - cashSpent);
+    // Wallet Transfer
+    const cashWalletMoves = walletTransferNetForMonth(sourceMonth);
+    const cashLeftover = roundMoney(carryIn("cash", sourceMonth) + fundNetForMonth("cash", sourceMonth) + cashWalletMoves - cashSpent);
     corrected.bank[sourceMonth] = bankLeftover;
     corrected.cash[sourceMonth] = cashLeftover;
 
